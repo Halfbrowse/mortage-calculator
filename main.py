@@ -4,11 +4,24 @@ import threading
 
 from flask import Flask, jsonify, render_template_string, request
 
-from database import get_properties, get_stats, init_db
-from scraper import scrape_and_store
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ─── Optional scraper / DB imports ───────────────────────────────────────────
+# The app stays fully functional (mortgage calculator) even if these modules
+# or their dependencies (requests, beautifulsoup4, lxml) are missing.
+try:
+    from database import get_properties, get_stats, init_db
+    from scraper import scrape_and_store
+    _SCRAPER_AVAILABLE = True
+except Exception as _import_err:
+    logger.warning("Scraper/DB unavailable — properties feature disabled: %s", _import_err)
+    _SCRAPER_AVAILABLE = False
+
+    def init_db(): pass
+    def get_properties(**_): return []
+    def get_stats(): return {"count": 0, "min_price": 0, "max_price": 0}
+    def scrape_and_store(**_): return 0
 
 app = Flask(__name__)
 
@@ -26,7 +39,6 @@ def _background_scraper():
     """Daemon thread: scrape on startup (after brief delay), then every N hours."""
     import time as _time
 
-    # Wait a few seconds so the server is up before first scrape
     _time.sleep(5)
     while True:
         if _scrape_lock.acquire(blocking=False):
@@ -47,8 +59,9 @@ def _background_scraper():
         _time.sleep(_SCRAPE_INTERVAL_HOURS * 3600)
 
 
-_scraper_thread = threading.Thread(target=_background_scraper, daemon=True)
-_scraper_thread.start()
+if _SCRAPER_AVAILABLE:
+    _scraper_thread = threading.Thread(target=_background_scraper, daemon=True)
+    _scraper_thread.start()
 
 
 def belgian_buying_costs(
