@@ -785,6 +785,51 @@ HTML = """
       .disclaimer { padding: 0 20px; }
     }
 
+    /* MOBILE IMPROVEMENTS */
+    @media (max-width: 480px) {
+      header { padding: 32px 20px 24px; }
+      header::before { font-size: 160px; }
+      .container { padding: 16px; gap: 20px; }
+      .stats-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .stat-card { padding: 14px; }
+      .stat-value { font-size: 20px; }
+      .panel-body { padding: 16px; }
+      .panel-header { padding: 14px 16px; font-size: 10px; }
+      .tab-btn { padding: 12px 6px; font-size: 9px; }
+      .field { margin-bottom: 16px; }
+      .overpay-result { grid-template-columns: 1fr; }
+      .afford-grid { grid-template-columns: 1fr; }
+      .compare-table td, .compare-table th { padding: 8px 10px; font-size: 11px; }
+      .costs-list li { font-size: 12px; gap: 8px; flex-wrap: wrap; }
+      .costs-list .cost-val { margin-left: auto; }
+      .btn-calc { font-size: 12px; padding: 14px; }
+      .disclaimer { padding: 0 16px; margin-bottom: 32px; }
+    }
+
+    /* Make tables horizontally scrollable on mobile */
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .compare-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { min-width: 360px; }
+    .compare-table { min-width: 380px; }
+
+    /* Larger touch targets for range sliders */
+    @media (hover: none) and (pointer: coarse) {
+      input[type="range"] { height: 6px; }
+      input[type="range"]::-webkit-slider-thumb {
+        width: 26px; height: 26px;
+        box-shadow: 0 0 12px rgba(201,168,76,0.5);
+      }
+      .tab-btn { padding: 14px 8px; }
+    }
+
+    /* Prevent iOS font size adjustment */
+    body { -webkit-text-size-adjust: 100%; }
+
+    /* Ensure inputs don't trigger zoom on iOS (needs 16px+) */
+    @media (max-width: 768px) {
+      input[type="number"], select { font-size: 16px; }
+    }
+
     /* URL SHARE TOAST */
     .toast {
       position: fixed;
@@ -1377,6 +1422,7 @@ function renderCompare(a, b) {
     <div class="panel animate" style="animation-delay:0.08s">
       <div class="panel-header">Scenario Comparison</div>
       <div class="panel-body" style="padding:0">
+        <div class="compare-table-wrap">
         <table class="compare-table">
           <thead>
             <tr>
@@ -1402,6 +1448,7 @@ function renderCompare(a, b) {
             }).join('')}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   `;
