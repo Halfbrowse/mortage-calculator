@@ -385,6 +385,26 @@ HTML = """
       to { opacity: 1; transform: translateY(0); }
     }
     .animate { animation: fadeUp 0.4s ease forwards; }
+
+    /* DISCLAIMER */
+    .disclaimer {
+      max-width: 1280px;
+      margin: 0 auto 48px;
+      padding: 0 40px;
+    }
+    .disclaimer-inner {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .disclaimer-inner strong { color: var(--text); }
+    @media (max-width: 900px) {
+      .disclaimer { padding: 0 20px; }
+    }
   </style>
 </head>
 <body>
@@ -524,6 +544,12 @@ HTML = """
         <p>Enter your loan details and click <strong>Calculate</strong> to see your repayment schedule.</p>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="disclaimer">
+  <div class="disclaimer-inner">
+    <strong>Disclaimer:</strong> This simulator is provided for illustrative and informational purposes only. All calculations are estimates based on simplified models and may not reflect actual loan offers, fees, or tax treatment. Belgian tax rules, notary tariffs, and bank policies change frequently — figures shown (registration duties, abatements, notary fees, etc.) are approximations only. This tool does not constitute financial, legal, or tax advice. Always consult a licensed mortgage broker, notary, or financial adviser before making any property purchase or financing decision.
   </div>
 </div>
 
