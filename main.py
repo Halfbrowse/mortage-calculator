@@ -1,6 +1,54 @@
+import logging
+import os
+import threading
+
 from flask import Flask, jsonify, render_template_string, request
 
+from database import get_properties, get_stats, init_db
+from scraper import scrape_and_store
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
+
+# Initialise database on startup
+init_db()
+
+_scrape_lock = threading.Lock()
+
+# ─── AUTO-SCRAPE SCHEDULER ───────────────────────────────────────────────────
+_SCRAPE_INTERVAL_HOURS = int(os.environ.get("SCRAPE_INTERVAL_HOURS", 6))
+_SCRAPE_PAGES = int(os.environ.get("SCRAPE_PAGES", 10))
+
+
+def _background_scraper():
+    """Daemon thread: scrape on startup (after brief delay), then every N hours."""
+    import time as _time
+
+    # Wait a few seconds so the server is up before first scrape
+    _time.sleep(5)
+    while True:
+        if _scrape_lock.acquire(blocking=False):
+            try:
+                stats_before = get_stats()
+                logger.info(
+                    "Auto-scrape starting (interval=%dh, pages=%d) — DB has %d properties",
+                    _SCRAPE_INTERVAL_HOURS, _SCRAPE_PAGES, stats_before["count"],
+                )
+                stored = scrape_and_store(pages=_SCRAPE_PAGES)
+                logger.info("Auto-scrape done — stored %d properties", stored)
+            except Exception as exc:
+                logger.error("Auto-scrape error: %s", exc)
+            finally:
+                _scrape_lock.release()
+        else:
+            logger.info("Auto-scrape skipped — manual scrape already running.")
+        _time.sleep(_SCRAPE_INTERVAL_HOURS * 3600)
+
+
+_scraper_thread = threading.Thread(target=_background_scraper, daemon=True)
+_scraper_thread.start()
 
 
 def belgian_buying_costs(
@@ -885,6 +933,107 @@ HTML = """
       pointer-events: none;
     }
     .toast.visible { transform: translateX(-50%) translateY(0); }
+
+    /* ── PROPERTIES ─────────────────────────────────────────────────────── */
+    #prop-section {
+      display: none;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 40px 48px;
+    }
+    #prop-section.visible { display: block; }
+    @media (max-width: 960px) { #prop-section { padding: 0 20px 32px; } }
+    @media (max-width: 480px) { #prop-section { padding: 0 16px 24px; } }
+
+    .prop-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+      margin-top: 24px;
+    }
+    .prop-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      transition: border-color 0.2s, transform 0.2s;
+      display: flex;
+      flex-direction: column;
+    }
+    .prop-card:hover { border-color: var(--gold); transform: translateY(-2px); }
+    .prop-card a { text-decoration: none; color: inherit; display: flex; flex-direction: column; flex: 1; }
+    .prop-img {
+      width: 100%;
+      aspect-ratio: 16/9;
+      object-fit: cover;
+      background: var(--surface);
+      display: block;
+    }
+    .prop-img-placeholder {
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      color: var(--border);
+    }
+    .prop-body { padding: 16px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+    .prop-price {
+      font-family: 'Playfair Display', serif;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--gold);
+    }
+    .prop-title { font-size: 13px; color: var(--text); line-height: 1.4; }
+    .prop-loc { font-size: 11px; color: var(--muted); }
+    .prop-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: auto;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .prop-meta span { display: flex; align-items: center; gap: 4px; }
+
+    .prop-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 4px;
+    }
+    .prop-status {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+    }
+    .prop-status .count { color: var(--gold); font-weight: 500; }
+    .scrape-btn {
+      background: transparent;
+      border: 1px solid var(--gold);
+      color: var(--gold);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: background 0.2s, color 0.2s;
+    }
+    .scrape-btn:hover { background: var(--gold-dim); }
+    .scrape-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .prop-empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .prop-empty-icon { font-size: 48px; opacity: 0.3; display: block; margin-bottom: 12px; }
   </style>
 </head>
 <body>
@@ -908,6 +1057,7 @@ HTML = """
         <button class="tab-btn active" onclick="switchTab('main')">Loan</button>
         <button class="tab-btn" onclick="switchTab('compare')">Compare B</button>
         <button class="tab-btn" onclick="switchTab('afford')">Affordability</button>
+        <button class="tab-btn" onclick="switchTab('properties')">Properties</button>
       </div>
 
       <!-- TAB: MAIN LOAN -->
@@ -1144,6 +1294,44 @@ HTML = """
           </div>
         </div>
       </div>
+
+      <!-- TAB: PROPERTIES -->
+      <div class="tab-content" id="tab-properties">
+        <div class="panel-body">
+          <div class="info-box">
+            Search live Belgian listings scraped from <strong>Immoweb</strong>. Filter by price range and click <em>Search</em>. Hit <em>Refresh Listings</em> to fetch the latest data.
+          </div>
+
+          <div class="field">
+            <label>Min Price</label>
+            <div class="input-wrap">
+              <input type="number" id="propMinPrice" value="100000" min="0" step="10000"/>
+              <span class="unit">€</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Max Price</label>
+            <div class="input-wrap">
+              <input type="number" id="propMaxPrice" value="500000" min="0" step="10000"/>
+              <span class="unit">€</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Property Type</label>
+            <select id="propType" style="width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-family:inherit;font-size:13px;">
+              <option value="all">All types</option>
+              <option value="HOUSE">House</option>
+              <option value="APARTMENT">Apartment</option>
+            </select>
+          </div>
+
+          <button class="btn-calc" onclick="searchProperties()" style="margin-bottom:10px;">Search Properties →</button>
+          <button class="scrape-btn" id="scrapeBtn" onclick="triggerScrape()">Refresh Listings</button>
+          <div id="scrapeStatus" style="margin-top:8px;font-size:11px;color:var(--muted);"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1157,6 +1345,26 @@ HTML = """
     </div>
   </div>
 </div>
+
+<!-- PROPERTIES FULL-WIDTH SECTION -->
+<section id="prop-section">
+  <div class="panel" style="border-radius:14px;">
+    <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+      <span>Immoweb Listings</span>
+      <div class="prop-toolbar">
+        <span class="prop-status" id="propCount"></span>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div id="propResults">
+        <div class="prop-empty">
+          <span class="prop-empty-icon">🏠</span>
+          Use the <strong>Properties</strong> tab on the left to search listings.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <div class="disclaimer">
   <div class="disclaimer-inner">
@@ -1186,13 +1394,104 @@ function fmtDiff(n) {
 // ─── TABS ─────────────────────────────────────────────────────────────────────
 function switchTab(name) {
   activeTab = name;
+  const tabs = ['main', 'compare', 'afford', 'properties'];
   document.querySelectorAll('.tab-btn').forEach((b, i) => {
-    const tabs = ['main', 'compare', 'afford'];
     b.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'afford') { renderAffordabilityEstimator(); if (lastDataA) renderAffordability(); }
+  const propSection = document.getElementById('prop-section');
+  propSection.classList.toggle('visible', name === 'properties');
+}
+
+// ─── PROPERTIES ──────────────────────────────────────────────────────────────
+function searchProperties() {
+  const minPrice = parseInt(document.getElementById('propMinPrice').value) || 0;
+  const maxPrice = parseInt(document.getElementById('propMaxPrice').value) || 0;
+  const propType = document.getElementById('propType').value;
+  const container = document.getElementById('propResults');
+  const countEl   = document.getElementById('propCount');
+
+  container.innerHTML = '<div class="prop-empty"><span class="prop-empty-icon" style="font-size:32px;opacity:.5;">⏳</span>Loading…</div>';
+
+  const params = new URLSearchParams({ limit: 48 });
+  if (minPrice > 0) params.append('min_price', minPrice);
+  if (maxPrice > 0) params.append('max_price', maxPrice);
+  if (propType && propType !== 'all') params.append('prop_type', propType);
+
+  fetch('/api/properties?' + params.toString())
+    .then(r => r.json())
+    .then(data => {
+      const props = data.properties || [];
+      countEl.innerHTML = props.length > 0
+        ? `<span class="count">${props.length}</span> listings found`
+        : '';
+      if (props.length === 0) {
+        container.innerHTML = '<div class="prop-empty"><span class="prop-empty-icon">🔍</span>No properties found in this range.<br/>Try clicking <em>Refresh Listings</em> to scrape new data.</div>';
+        return;
+      }
+      container.innerHTML = '<div class="prop-grid">' + props.map(renderCard).join('') + '</div>';
+    })
+    .catch(() => {
+      container.innerHTML = '<div class="prop-empty">Error loading properties. Please try again.</div>';
+    });
+}
+
+function renderCard(p) {
+  const price = '€' + p.price.toLocaleString('nl-BE');
+  const img = p.image_url
+    ? `<img class="prop-img" src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
+       <div class="prop-img-placeholder" style="display:none;">🏠</div>`
+    : `<div class="prop-img-placeholder">🏠</div>`;
+  const beds = p.bedrooms ? `<span>🛏 ${p.bedrooms}</span>` : '';
+  const area = p.area    ? `<span>📐 ${p.area} m²</span>` : '';
+  const type = p.prop_type ? `<span>🏷 ${p.prop_type.toLowerCase()}</span>` : '';
+  return `
+    <div class="prop-card animate">
+      <a href="${esc(p.url)}" target="_blank" rel="noopener">
+        ${img}
+        <div class="prop-body">
+          <div class="prop-price">${price}</div>
+          <div class="prop-title">${esc(p.title || '—')}</div>
+          <div class="prop-loc">${esc(p.location || '')}</div>
+          ${ (beds || area || type) ? `<div class="prop-meta">${beds}${area}${type}</div>` : '' }
+        </div>
+      </a>
+    </div>`;
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function triggerScrape() {
+  const btn    = document.getElementById('scrapeBtn');
+  const status = document.getElementById('scrapeStatus');
+  const minPrice = parseInt(document.getElementById('propMinPrice').value) || null;
+  const maxPrice = parseInt(document.getElementById('propMaxPrice').value) || null;
+
+  btn.disabled = true;
+  btn.textContent = 'Scraping…';
+  status.textContent = 'Fetching listings from Immoweb — this may take 30–60 s…';
+
+  fetch('/api/scrape', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ min_price: minPrice, max_price: maxPrice, pages: 5 }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      status.textContent = data.message || 'Done.';
+      btn.disabled = false;
+      btn.textContent = 'Refresh Listings';
+      searchProperties();
+    })
+    .catch(() => {
+      status.textContent = 'Scrape request failed.';
+      btn.disabled = false;
+      btn.textContent = 'Refresh Listings';
+    });
 }
 
 // ─── VALIDATION ───────────────────────────────────────────────────────────────
@@ -1984,6 +2283,61 @@ def calculate_route():
     if result is None:
         return jsonify({"error": "Invalid parameters"}), 400
     return jsonify(result)
+
+
+@app.route("/api/properties")
+def api_properties():
+    try:
+        min_price = request.args.get("min_price", type=int)
+        max_price = request.args.get("max_price", type=int)
+        prop_type = request.args.get("prop_type")
+        limit = min(int(request.args.get("limit", 48)), 100)
+        offset = int(request.args.get("offset", 0))
+        props = get_properties(
+            min_price=min_price,
+            max_price=max_price,
+            prop_type=prop_type,
+            limit=limit,
+            offset=offset,
+        )
+        return jsonify({"properties": props, "count": len(props)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/scrape", methods=["POST"])
+def api_scrape():
+    if not _scrape_lock.acquire(blocking=False):
+        return jsonify({"message": "Scrape already in progress — please wait."}), 409
+
+    data = request.get_json(silent=True) or {}
+    pages = max(1, min(int(data.get("pages", 5)), 20))
+    min_price = data.get("min_price")
+    max_price = data.get("max_price")
+
+    def _run():
+        try:
+            stored = scrape_and_store(pages=pages, min_price=min_price, max_price=max_price)
+            app.logger.info("Scrape complete: %d properties stored", stored)
+        finally:
+            _scrape_lock.release()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=90)  # wait up to 90 s so caller gets a result
+
+    if t.is_alive():
+        return jsonify({"message": "Scrape is still running in the background."})
+    stats = get_stats()
+    return jsonify({
+        "message": f"Scrape complete — {stats['count']} properties in database.",
+        "stats": stats,
+    })
+
+
+@app.route("/api/db-stats")
+def api_db_stats():
+    return jsonify(get_stats())
 
 
 if __name__ == "__main__":
