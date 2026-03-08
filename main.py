@@ -1070,7 +1070,6 @@ HTML = """
         <button class="tab-btn active" onclick="switchTab('main')">Loan</button>
         <button class="tab-btn" onclick="switchTab('compare')">Compare B</button>
         <button class="tab-btn" onclick="switchTab('afford')">Affordability</button>
-        <button class="tab-btn" onclick="switchTab('properties')">Properties</button>
       </div>
 
       <!-- TAB: MAIN LOAN -->
@@ -1308,43 +1307,6 @@ HTML = """
         </div>
       </div>
 
-      <!-- TAB: PROPERTIES -->
-      <div class="tab-content" id="tab-properties">
-        <div class="panel-body">
-          <div class="info-box">
-            Search live Belgian listings scraped from <strong>Immoweb</strong>. Filter by price range and click <em>Search</em>. Hit <em>Refresh Listings</em> to fetch the latest data.
-          </div>
-
-          <div class="field">
-            <label>Min Price</label>
-            <div class="input-wrap">
-              <input type="number" id="propMinPrice" value="100000" min="0" step="10000"/>
-              <span class="unit">€</span>
-            </div>
-          </div>
-
-          <div class="field">
-            <label>Max Price</label>
-            <div class="input-wrap">
-              <input type="number" id="propMaxPrice" value="500000" min="0" step="10000"/>
-              <span class="unit">€</span>
-            </div>
-          </div>
-
-          <div class="field">
-            <label>Property Type</label>
-            <select id="propType" style="width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-family:inherit;font-size:13px;">
-              <option value="all">All types</option>
-              <option value="HOUSE">House</option>
-              <option value="APARTMENT">Apartment</option>
-            </select>
-          </div>
-
-          <button class="btn-calc" onclick="searchProperties()" style="margin-bottom:10px;">Search Properties →</button>
-          <button class="scrape-btn" id="scrapeBtn" onclick="triggerScrape()">Refresh Listings</button>
-          <div id="scrapeStatus" style="margin-top:8px;font-size:11px;color:var(--muted);"></div>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -1360,19 +1322,20 @@ HTML = """
 </div>
 
 <!-- PROPERTIES FULL-WIDTH SECTION -->
-<section id="prop-section">
+<section id="prop-section" class="visible">
   <div class="panel" style="border-radius:14px;">
     <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-      <span>Immoweb Listings</span>
+      <span>Matching Listings</span>
       <div class="prop-toolbar">
         <span class="prop-status" id="propCount"></span>
+        <button class="scrape-btn" id="scrapeBtn" onclick="triggerScrape()">Refresh Listings</button>
       </div>
     </div>
     <div class="panel-body">
       <div id="propResults">
         <div class="prop-empty">
           <span class="prop-empty-icon">🏠</span>
-          Use the <strong>Properties</strong> tab on the left to search listings.
+          Simulate a mortgage above to see matching listings.
         </div>
       </div>
     </div>
@@ -1407,41 +1370,39 @@ function fmtDiff(n) {
 // ─── TABS ─────────────────────────────────────────────────────────────────────
 function switchTab(name) {
   activeTab = name;
-  const tabs = ['main', 'compare', 'afford', 'properties'];
+  const tabs = ['main', 'compare', 'afford'];
   document.querySelectorAll('.tab-btn').forEach((b, i) => {
     b.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'afford') { renderAffordabilityEstimator(); if (lastDataA) renderAffordability(); }
-  const propSection = document.getElementById('prop-section');
-  propSection.classList.toggle('visible', name === 'properties');
 }
 
 // ─── PROPERTIES ──────────────────────────────────────────────────────────────
 function searchProperties() {
-  const minPrice = parseInt(document.getElementById('propMinPrice').value) || 0;
-  const maxPrice = parseInt(document.getElementById('propMaxPrice').value) || 0;
-  const propType = document.getElementById('propType').value;
+  const simPrice = parseFloat(document.getElementById('price').value) || 0;
   const container = document.getElementById('propResults');
   const countEl   = document.getElementById('propCount');
 
+  if (simPrice <= 0) return;
+
+  const minPrice = Math.round(simPrice * 0.85);
+  const maxPrice = Math.round(simPrice * 1.15);
+
   container.innerHTML = '<div class="prop-empty"><span class="prop-empty-icon" style="font-size:32px;opacity:.5;">⏳</span>Loading…</div>';
 
-  const params = new URLSearchParams({ limit: 48 });
-  if (minPrice > 0) params.append('min_price', minPrice);
-  if (maxPrice > 0) params.append('max_price', maxPrice);
-  if (propType && propType !== 'all') params.append('prop_type', propType);
+  const params = new URLSearchParams({ limit: 48, min_price: minPrice, max_price: maxPrice });
 
   fetch('/api/properties?' + params.toString())
     .then(r => r.json())
     .then(data => {
       const props = data.properties || [];
       countEl.innerHTML = props.length > 0
-        ? `<span class="count">${props.length}</span> listings found`
+        ? `<span class="count">${props.length}</span> listings near ${fmt(simPrice)}`
         : '';
       if (props.length === 0) {
-        container.innerHTML = '<div class="prop-empty"><span class="prop-empty-icon">🔍</span>No properties found in this range.<br/>Try clicking <em>Refresh Listings</em> to scrape new data.</div>';
+        container.innerHTML = `<div class="prop-empty"><span class="prop-empty-icon">🔍</span>No listings found near ${fmt(simPrice)}.<br/>Click <em>Refresh Listings</em> to fetch the latest data from Immoweb.</div>`;
         return;
       }
       container.innerHTML = '<div class="prop-grid">' + props.map(renderCard).join('') + '</div>';
@@ -1479,14 +1440,13 @@ function esc(s) {
 }
 
 function triggerScrape() {
-  const btn    = document.getElementById('scrapeBtn');
-  const status = document.getElementById('scrapeStatus');
-  const minPrice = parseInt(document.getElementById('propMinPrice').value) || null;
-  const maxPrice = parseInt(document.getElementById('propMaxPrice').value) || null;
+  const btn = document.getElementById('scrapeBtn');
+  const simPrice = parseFloat(document.getElementById('price').value) || 0;
+  const minPrice = simPrice > 0 ? Math.round(simPrice * 0.85) : null;
+  const maxPrice = simPrice > 0 ? Math.round(simPrice * 1.15) : null;
 
   btn.disabled = true;
   btn.textContent = 'Scraping…';
-  status.textContent = 'Fetching listings from Immoweb — this may take 30–60 s…';
 
   fetch('/api/scrape', {
     method: 'POST',
@@ -1494,14 +1454,12 @@ function triggerScrape() {
     body: JSON.stringify({ min_price: minPrice, max_price: maxPrice, pages: 5 }),
   })
     .then(r => r.json())
-    .then(data => {
-      status.textContent = data.message || 'Done.';
+    .then(() => {
       btn.disabled = false;
       btn.textContent = 'Refresh Listings';
       searchProperties();
     })
     .catch(() => {
-      status.textContent = 'Scrape request failed.';
       btn.disabled = false;
       btn.textContent = 'Refresh Listings';
     });
@@ -1615,6 +1573,7 @@ function calculate() {
     saveToURL(paramsA, compareActive ? getParamsB() : null);
     renderResults(lastDataA, lastDataB);
     if (activeTab === 'afford') renderAffordability();
+    searchProperties();
   });
 }
 
