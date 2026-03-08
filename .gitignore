@@ -42,3 +42,8 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# SQLite database (runtime data, not source)
+*.db
+*.sqlite
+*.sqlite3
