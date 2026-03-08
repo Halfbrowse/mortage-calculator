@@ -731,6 +731,43 @@ HTML = """
       transition: width 0.4s ease;
     }
 
+    /* PRICE RANGE BAR */
+    .afford-range-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 14px 0 4px;
+    }
+    .range-label-33 { font-size: 11px; color: var(--green); font-weight: 700; min-width: 28px; }
+    .range-label-40 { font-size: 11px; color: var(--orange); font-weight: 700; min-width: 28px; }
+    .range-track {
+      flex: 1;
+      background: var(--border);
+      border-radius: 6px;
+      height: 10px;
+      position: relative;
+    }
+    .range-fill {
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 100%;
+      background: linear-gradient(90deg, var(--green) 0%, var(--orange) 100%);
+      border-radius: 6px;
+      opacity: 0.55;
+    }
+    .range-pin {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 10px;
+      font-weight: 700;
+      white-space: nowrap;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .pin-33 { left: 10%; background: var(--green); color: #000; }
+    .pin-40 { left: 90%; background: var(--orange); color: #000; }
+
     /* SCENARIO B INFO BOX */
     .info-box {
       background: var(--surface);
@@ -1057,20 +1094,53 @@ HTML = """
       <div class="tab-content" id="tab-afford">
         <div class="panel-body">
           <div class="info-box">
-            Belgian banks typically cap housing costs at <strong>33–40%</strong> of net monthly income for primary residences. Stress test applies rate + 1%. All calculations use Scenario A parameters.
+            Belgian banks typically cap housing costs at <strong>33–40%</strong> of net monthly income. Enter your details below to estimate your price range — no loan setup required.
           </div>
 
           <div class="field">
             <label>Monthly Net Household Income</label>
             <div class="input-wrap">
               <input type="number" id="netIncome" value="5000" min="500" step="100"
-                oninput="debouncedCalc()"/>
+                oninput="debouncedCalc(); renderAffordabilityEstimator();"/>
               <span class="unit">€</span>
             </div>
           </div>
 
-          <div id="afford-results" style="margin-top:8px;">
-            <div class="info-box" style="color:var(--muted)">Calculate your loan first to see affordability metrics.</div>
+          <div class="field">
+            <label>Down Payment Available</label>
+            <div class="input-wrap">
+              <input type="number" id="affordDown" value="50000" min="0" step="1000"
+                oninput="renderAffordabilityEstimator()"/>
+              <span class="unit">€</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Loan Term — <span id="affordTermDisplay">20</span> years</label>
+            <div class="slider-wrap">
+              <input type="range" id="affordTerm" min="5" max="30" step="1" value="20"
+                oninput="document.getElementById('affordTermDisplay').textContent=this.value;
+                         document.getElementById('affordTermVal').textContent=this.value;
+                         renderAffordabilityEstimator();"/>
+              <span class="range-val"><span id="affordTermVal">20</span>y</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Estimated Interest Rate — <span id="affordRateDisplay">3.50</span>%</label>
+            <div class="slider-wrap">
+              <input type="range" id="affordRate" min="0.5" max="8" step="0.05" value="3.5"
+                oninput="document.getElementById('affordRateDisplay').textContent=parseFloat(this.value).toFixed(2);
+                         document.getElementById('affordRateVal').textContent=parseFloat(this.value).toFixed(2);
+                         renderAffordabilityEstimator();"/>
+              <span class="range-val"><span id="affordRateVal">3.50</span>%</span>
+            </div>
+          </div>
+
+          <div id="afford-estimator" style="margin-top:8px;"></div>
+
+          <div id="afford-results" style="margin-top:16px;">
+            <div class="info-box" style="color:var(--muted)">Calculate Scenario A to also see how a specific loan compares against your income ratio.</div>
           </div>
         </div>
       </div>
@@ -1122,7 +1192,7 @@ function switchTab(name) {
   });
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  if (name === 'afford' && lastDataA) renderAffordability();
+  if (name === 'afford') { renderAffordabilityEstimator(); if (lastDataA) renderAffordability(); }
 }
 
 // ─── VALIDATION ───────────────────────────────────────────────────────────────
@@ -1619,6 +1689,96 @@ function simulateExtra(loan, requiredPayment, extra, termYears) {
   return { months, totalInterest };
 }
 
+// ─── AFFORDABILITY ESTIMATOR (standalone, no Scenario A required) ─────────────
+function renderAffordabilityEstimator() {
+  const el = document.getElementById('afford-estimator');
+  if (!el) return;
+
+  const income = parseFloat(document.getElementById('netIncome').value) || 0;
+  const down   = parseFloat(document.getElementById('affordDown').value) || 0;
+  const term   = parseInt(document.getElementById('affordTerm').value)   || 20;
+  const rate   = parseFloat(document.getElementById('affordRate').value) / 100;
+
+  if (income <= 0) {
+    el.innerHTML = '<div class="info-box" style="color:var(--muted)">Enter your monthly income to see your price range.</div>';
+    return;
+  }
+
+  // Monthly rate (compound)
+  const mr = Math.pow(1 + rate, 1/12) - 1;
+  const n  = term * 12;
+
+  // Annuity formula: max loan = payment × [(1+r)^n − 1] / [r × (1+r)^n]
+  function maxLoanForBudget(monthlyBudget) {
+    if (mr <= 0) return monthlyBudget * n;
+    return monthlyBudget * (Math.pow(1+mr, n) - 1) / (mr * Math.pow(1+mr, n));
+  }
+
+  const budget33 = income * 0.33;
+  const budget40 = income * 0.40;
+
+  const loan33 = maxLoanForBudget(budget33);
+  const loan40 = maxLoanForBudget(budget40);
+
+  // Price = loan + down payment (buying costs are on top of down payment in practice,
+  // so this is the property price the loan + down covers directly)
+  const price33 = loan33 + down;
+  const price40 = loan40 + down;
+
+  // Stress test at rate + 1%
+  const stressRate = rate + 0.01;
+  const smr = Math.pow(1 + stressRate, 1/12) - 1;
+  const sLoan33 = smr <= 0 ? budget33 * n : budget33 * (Math.pow(1+smr, n) - 1) / (smr * Math.pow(1+smr, n));
+  const sPrice33 = sLoan33 + down;
+
+  const lvr33 = down > 0 ? (loan33 / price33 * 100) : 100;
+  const lvr40 = down > 0 ? (loan40 / price40 * 100) : 100;
+
+  el.innerHTML = `
+    <div style="margin-bottom:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Price Range Estimate</div>
+    <div class="afford-range-bar">
+      <div class="range-label-33">33%</div>
+      <div class="range-track">
+        <div class="range-fill"></div>
+        <div class="range-pin pin-33" title="Conservative (33%)">${fmtK(price33)}</div>
+        <div class="range-pin pin-40" title="Upper bound (40%)">${fmtK(price40)}</div>
+      </div>
+      <div class="range-label-40">40%</div>
+    </div>
+    <div class="afford-grid" style="margin-top:12px;">
+      <div class="afford-card" style="border-color:var(--green)">
+        <div class="a-label">Conservative (33%)</div>
+        <div class="a-val ok" style="font-size:18px;">${fmt(price33)}</div>
+        <div class="a-sub">Loan ${fmt(loan33)} · ${budget33.toFixed(0)}€/mo · LTV ${lvr33.toFixed(0)}%</div>
+      </div>
+      <div class="afford-card" style="border-color:var(--orange)">
+        <div class="a-label">Upper bound (40%)</div>
+        <div class="a-val warn" style="font-size:18px;">${fmt(price40)}</div>
+        <div class="a-sub">Loan ${fmt(loan40)} · ${budget40.toFixed(0)}€/mo · LTV ${lvr40.toFixed(0)}%</div>
+      </div>
+      <div class="afford-card">
+        <div class="a-label">Stress Test at ${((rate+0.01)*100).toFixed(2)}%</div>
+        <div class="a-val" style="font-size:16px;color:var(--text)">${fmt(sPrice33)}</div>
+        <div class="a-sub">Conservative ceiling if rate rises 1%</div>
+      </div>
+      <div class="afford-card">
+        <div class="a-label">Down Payment</div>
+        <div class="a-val" style="font-size:16px;color:var(--text)">${fmt(down)}</div>
+        <div class="a-sub">covers purchase price gap + buying costs</div>
+      </div>
+    </div>
+    <div class="info-box" style="margin-top:10px;font-size:11px;color:var(--muted)">
+      Price = loan + down payment. Buying costs (registration tax, notary fees) come on top — budget an extra 10–15% for existing properties or 2–4% for new builds.
+    </div>
+  `;
+}
+
+function fmtK(v) {
+  if (v >= 1000000) return (v/1000000).toFixed(2) + 'M';
+  if (v >= 1000) return Math.round(v/1000) + 'K';
+  return Math.round(v) + '';
+}
+
 // ─── AFFORDABILITY ────────────────────────────────────────────────────────────
 function renderAffordability() {
   if (!lastDataA) return;
@@ -1790,6 +1950,7 @@ function showToast(msg) {
 // ─── INIT ────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   loadFromURL();
+  renderAffordabilityEstimator();
   if (!window.location.hash) calculate();
 });
 </script>
