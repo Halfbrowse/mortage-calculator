@@ -88,20 +88,22 @@ def belgian_buying_costs(
     else:
         if region == "flanders":
             reg_rate_dec = 0.02 if primary_residence else 0.12
-        else:
+        elif region == "wallonia":
+            # Jan 2025 reform: 3% for primary/sole residence, 12.5% for all others.
+            # The old €20k abatement and chèque habitat were abolished at the same time.
+            reg_rate_dec = 0.03 if primary_residence else 0.125
+        else:  # brussels
             reg_rate_dec = 0.125
         reg_rate = reg_rate_dec * 100
         abatement = 0
         taxable = price
         if primary_residence:
-            if region == "brussels":
+            if region == "brussels" and price <= 600_000:
+                # Since April 2023 the Brussels abatement is €200,000 (raised from €175k).
+                # Only applies when price ≤ €600,000.
                 exempt = min(200_000, price)
                 abatement = exempt * reg_rate_dec
-                taxable = max(0, price - 175_000)
-            elif region == "wallonia":
-                exempt = min(20_000, price)
-                abatement = exempt * reg_rate_dec
-                taxable = max(0, price - 20_000)
+                taxable = max(0, price - 200_000)
         registration = taxable * reg_rate_dec
 
     if price <= 7_500:
@@ -121,7 +123,8 @@ def belgian_buying_costs(
     notary = max(notary, 500)
     notary *= 1.5  # VAT on notary fees + disbursements
 
-    deed = loan * 0.01
+    # Mortgage deed: 1% registration fee + 0.3% mortgage duty (both levied on loan amount)
+    deed = loan * 0.013
     total = registration + notary + deed
 
     return {
@@ -1186,8 +1189,8 @@ HTML = """
             <div class="input-wrap">
               <select id="region" onchange="debouncedCalc()">
                 <option value="flanders">Flanders — 2% (primary) / 12% (invest.)</option>
-                <option value="brussels">Brussels — 12.5% registration</option>
-                <option value="wallonia">Wallonia — 12.5% registration</option>
+                <option value="brussels">Brussels — 12.5% (€200k abatement ≤€600k)</option>
+                <option value="wallonia">Wallonia — 3% (primary) / 12.5% (invest.)</option>
               </select>
             </div>
           </div>
@@ -1310,8 +1313,8 @@ HTML = """
             <div class="input-wrap">
               <select id="regionB" onchange="debouncedCalc()">
                 <option value="flanders">Flanders — 2% (primary) / 12% (invest.)</option>
-                <option value="brussels">Brussels — 12.5% registration</option>
-                <option value="wallonia">Wallonia — 12.5% registration</option>
+                <option value="brussels">Brussels — 12.5% (€200k abatement ≤€600k)</option>
+                <option value="wallonia">Wallonia — 3% (primary) / 12.5% (invest.)</option>
               </select>
             </div>
           </div>
