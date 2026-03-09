@@ -13,15 +13,26 @@ logger = logging.getLogger(__name__)
 try:
     from database import get_properties, get_stats, init_db
     from scraper import scrape_and_store
+
     _SCRAPER_AVAILABLE = True
 except Exception as _import_err:
-    logger.warning("Scraper/DB unavailable — properties feature disabled: %s", _import_err)
+    logger.warning(
+        "Scraper/DB unavailable — properties feature disabled: %s", _import_err
+    )
     _SCRAPER_AVAILABLE = False
 
-    def init_db(): pass
-    def get_properties(**_): return []
-    def get_stats(): return {"count": 0, "min_price": 0, "max_price": 0}
-    def scrape_and_store(**_): return 0
+    def init_db():
+        pass
+
+    def get_properties(**_):
+        return []
+
+    def get_stats():
+        return {"count": 0, "min_price": 0, "max_price": 0}
+
+    def scrape_and_store(**_):
+        return 0
+
 
 app = Flask(__name__)
 
@@ -46,7 +57,9 @@ def _background_scraper():
                 stats_before = get_stats()
                 logger.info(
                     "Auto-scrape starting (interval=%dh, pages=%d) — DB has %d properties",
-                    _SCRAPE_INTERVAL_HOURS, _SCRAPE_PAGES, stats_before["count"],
+                    _SCRAPE_INTERVAL_HOURS,
+                    _SCRAPE_PAGES,
+                    stats_before["count"],
                 )
                 stored = scrape_and_store(pages=_SCRAPE_PAGES)
                 logger.info("Auto-scrape done — stored %d properties", stored)
@@ -1297,7 +1310,7 @@ HTML = """
           </div>
 
           <div class="field">
-            <label>Monthly Net Household Income</label>
+            <label>Monthly Take Home Pay</label>
             <div class="input-wrap">
               <input type="number" id="netIncome" value="5000" min="500" step="100"
                 oninput="debouncedCalc(); renderAffordabilityEstimator();"/>
@@ -1306,7 +1319,16 @@ HTML = """
           </div>
 
           <div class="field">
-            <label>Down Payment Available</label>
+            <label>Monthly Payment I'm Happy With</label>
+            <div class="input-wrap">
+              <input type="number" id="affordMonthly" value="1500" min="100" step="50"
+                oninput="renderAffordabilityEstimator();"/>
+              <span class="unit">€</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Deposit Available</label>
             <div class="input-wrap">
               <input type="number" id="affordDown" value="50000" min="0" step="1000"
                 oninput="renderAffordabilityEstimator()"/>
@@ -1326,13 +1348,11 @@ HTML = """
           </div>
 
           <div class="field">
-            <label>Estimated Interest Rate — <span id="affordRateDisplay">3.50</span>%</label>
-            <div class="slider-wrap">
-              <input type="range" id="affordRate" min="0.5" max="8" step="0.05" value="3.5"
-                oninput="document.getElementById('affordRateDisplay').textContent=parseFloat(this.value).toFixed(2);
-                         document.getElementById('affordRateVal').textContent=parseFloat(this.value).toFixed(2);
-                         renderAffordabilityEstimator();"/>
-              <span class="range-val"><span id="affordRateVal">3.50</span>%</span>
+            <label>Interest Rate I Think I Could Get</label>
+            <div class="input-wrap">
+              <input type="number" id="affordRate" value="3.5" min="0.5" max="15" step="0.05"
+                oninput="renderAffordabilityEstimator();"/>
+              <span class="unit">%</span>
             </div>
           </div>
 
@@ -2002,13 +2022,14 @@ function renderAffordabilityEstimator() {
   const el = document.getElementById('afford-estimator');
   if (!el) return;
 
-  const income = parseFloat(document.getElementById('netIncome').value) || 0;
-  const down   = parseFloat(document.getElementById('affordDown').value) || 0;
-  const term   = parseInt(document.getElementById('affordTerm').value)   || 20;
-  const rate   = parseFloat(document.getElementById('affordRate').value) / 100;
+  const income        = parseFloat(document.getElementById('netIncome').value)     || 0;
+  const targetMonthly = parseFloat(document.getElementById('affordMonthly').value) || 0;
+  const down          = parseFloat(document.getElementById('affordDown').value)     || 0;
+  const term          = parseInt(document.getElementById('affordTerm').value)       || 20;
+  const rate          = parseFloat(document.getElementById('affordRate').value) / 100;
 
-  if (income <= 0) {
-    el.innerHTML = '<div class="info-box" style="color:var(--muted)">Enter your monthly income to see your price range.</div>';
+  if (targetMonthly <= 0 && income <= 0) {
+    el.innerHTML = '<div class="info-box" style="color:var(--muted)">Enter your details above to see your price range.</div>';
     return;
   }
 
@@ -2022,61 +2043,62 @@ function renderAffordabilityEstimator() {
     return monthlyBudget * (Math.pow(1+mr, n) - 1) / (mr * Math.pow(1+mr, n));
   }
 
-  const budget33 = income * 0.33;
-  const budget40 = income * 0.40;
-
-  const loan33 = maxLoanForBudget(budget33);
-  const loan40 = maxLoanForBudget(budget40);
-
-  // Price = loan + down payment (buying costs are on top of down payment in practice,
-  // so this is the property price the loan + down covers directly)
-  const price33 = loan33 + down;
-  const price40 = loan40 + down;
+  // Primary: use the monthly budget the user is happy with
+  const budget = targetMonthly > 0 ? targetMonthly : income * 0.33;
+  const loan   = maxLoanForBudget(budget);
+  const price  = loan + down;
+  const ltvPct = price > 0 ? (loan / price * 100) : 100;
+  const incomeRatioPct = income > 0 ? (budget / income * 100) : null;
 
   // Stress test at rate + 1%
   const stressRate = rate + 0.01;
   const smr = Math.pow(1 + stressRate, 1/12) - 1;
-  const sLoan33 = smr <= 0 ? budget33 * n : budget33 * (Math.pow(1+smr, n) - 1) / (smr * Math.pow(1+smr, n));
-  const sPrice33 = sLoan33 + down;
+  const sLoan  = smr <= 0 ? budget * n : budget * (Math.pow(1+smr, n) - 1) / (smr * Math.pow(1+smr, n));
+  const sPrice = sLoan + down;
 
-  const lvr33 = down > 0 ? (loan33 / price33 * 100) : 100;
-  const lvr40 = down > 0 ? (loan40 / price40 * 100) : 100;
+  // What the banks' 33%/40% guidelines give, for context
+  const budget33 = income > 0 ? income * 0.33 : null;
+  const budget40 = income > 0 ? income * 0.40 : null;
+  const price33  = budget33 ? maxLoanForBudget(budget33) + down : null;
+  const price40  = budget40 ? maxLoanForBudget(budget40) + down : null;
+
+  const ratioColor = incomeRatioPct === null ? 'var(--text)'
+    : incomeRatioPct <= 33 ? 'var(--green)'
+    : incomeRatioPct <= 40 ? 'var(--orange)'
+    : 'var(--red)';
 
   el.innerHTML = `
-    <div style="margin-bottom:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Price Range Estimate</div>
-    <div class="afford-range-bar">
-      <div class="range-label-33">33%</div>
-      <div class="range-track">
-        <div class="range-fill"></div>
-        <div class="range-pin pin-33" title="Conservative (33%)">${fmtK(price33)}</div>
-        <div class="range-pin pin-40" title="Upper bound (40%)">${fmtK(price40)}</div>
-      </div>
-      <div class="range-label-40">40%</div>
-    </div>
-    <div class="afford-grid" style="margin-top:12px;">
+    <div style="margin-bottom:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Your Budget Estimate</div>
+    <div class="afford-grid" style="margin-top:4px;">
       <div class="afford-card" style="border-color:var(--green)">
-        <div class="a-label">Conservative (33%)</div>
-        <div class="a-val ok" style="font-size:18px;">${fmt(price33)}</div>
-        <div class="a-sub">Loan ${fmt(loan33)} · ${budget33.toFixed(0)}€/mo · LTV ${lvr33.toFixed(0)}%</div>
+        <div class="a-label">Max Property Price</div>
+        <div class="a-val ok" style="font-size:18px;">${fmt(price)}</div>
+        <div class="a-sub">Loan ${fmt(loan)} · LTV ${ltvPct.toFixed(0)}%</div>
       </div>
-      <div class="afford-card" style="border-color:var(--orange)">
-        <div class="a-label">Upper bound (40%)</div>
-        <div class="a-val warn" style="font-size:18px;">${fmt(price40)}</div>
-        <div class="a-sub">Loan ${fmt(loan40)} · ${budget40.toFixed(0)}€/mo · LTV ${lvr40.toFixed(0)}%</div>
+      <div class="afford-card">
+        <div class="a-label">Deposit</div>
+        <div class="a-val" style="font-size:16px;color:var(--text)">${fmt(down)}</div>
+        <div class="a-sub">${ltvPct < 100 ? ltvPct.toFixed(0) + '% LTV — ' + (100 - ltvPct).toFixed(0) + '% equity' : 'no deposit entered'}</div>
       </div>
       <div class="afford-card">
         <div class="a-label">Stress Test at ${((rate+0.01)*100).toFixed(2)}%</div>
-        <div class="a-val" style="font-size:16px;color:var(--text)">${fmt(sPrice33)}</div>
-        <div class="a-sub">Conservative ceiling if rate rises 1%</div>
+        <div class="a-val" style="font-size:16px;color:var(--text)">${fmt(sPrice)}</div>
+        <div class="a-sub">if rate rises 1%, same monthly budget</div>
       </div>
       <div class="afford-card">
-        <div class="a-label">Down Payment</div>
-        <div class="a-val" style="font-size:16px;color:var(--text)">${fmt(down)}</div>
-        <div class="a-sub">covers purchase price gap + buying costs</div>
+        <div class="a-label">% of Take Home Pay</div>
+        <div class="a-val" style="font-size:16px;color:${ratioColor}">${incomeRatioPct !== null ? incomeRatioPct.toFixed(1) + '%' : '—'}</div>
+        <div class="a-sub">banks prefer ≤33–40% of net income</div>
       </div>
     </div>
+    ${price33 || price40 ? `
+    <div style="margin-top:12px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Bank Guidelines (for reference)</div>
+    <div class="afford-grid" style="margin-top:4px;">
+      ${price33 ? `<div class="afford-card"><div class="a-label">Conservative (33%)</div><div class="a-val" style="font-size:15px;color:var(--text)">${fmt(price33)}</div><div class="a-sub">${budget33.toFixed(0)}€/mo</div></div>` : ''}
+      ${price40 ? `<div class="afford-card"><div class="a-label">Upper bound (40%)</div><div class="a-val" style="font-size:15px;color:var(--text)">${fmt(price40)}</div><div class="a-sub">${budget40.toFixed(0)}€/mo</div></div>` : ''}
+    </div>` : ''}
     <div class="info-box" style="margin-top:10px;font-size:11px;color:var(--muted)">
-      Price = loan + down payment. Buying costs (registration tax, notary fees) come on top — budget an extra 10–15% for existing properties or 2–4% for new builds.
+      Price = loan + deposit. Buying costs (registration tax, notary fees) come on top — budget an extra 10–15% for existing properties or 2–4% for new builds.
     </div>
   `;
 }
@@ -2334,7 +2356,9 @@ def api_scrape():
 
     def _run():
         try:
-            stored = scrape_and_store(pages=pages, min_price=min_price, max_price=max_price)
+            stored = scrape_and_store(
+                pages=pages, min_price=min_price, max_price=max_price
+            )
             app.logger.info("Scrape complete: %d properties stored", stored)
         finally:
             _scrape_lock.release()
@@ -2346,10 +2370,12 @@ def api_scrape():
     if t.is_alive():
         return jsonify({"message": "Scrape is still running in the background."})
     stats = get_stats()
-    return jsonify({
-        "message": f"Scrape complete — {stats['count']} properties in database.",
-        "stats": stats,
-    })
+    return jsonify(
+        {
+            "message": f"Scrape complete — {stats['count']} properties in database.",
+            "stats": stats,
+        }
+    )
 
 
 @app.route("/api/db-stats")
