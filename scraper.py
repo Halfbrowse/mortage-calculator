@@ -9,8 +9,8 @@ import logging
 import re
 import time
 from datetime import UTC, datetime
+from urllib.parse import unquote, urlencode
 
-import requests
 from bs4 import BeautifulSoup
 
 from database import upsert_property
@@ -22,24 +22,20 @@ _BASE_URL = "https://www.immoweb.be"
 _SEARCH_URL = "https://www.immoweb.be/en/search-results/apartment/for-sale"
 _WARMUP_URL = "https://www.immoweb.be/en"
 
+_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/145.0.0.0 Safari/537.36"
+)
 
-_HEADERS_JSON = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/145.0.0.0 Safari/537.36"
-    ),
+_API_HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
     "X-Requested-With": "XMLHttpRequest",
     "Sec-Fetch-Dest": "empty",
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Site": "same-origin",
-    "Sec-Ch-Ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
-    "Sec-Ch-Ua-Mobile": "?0",
-    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Referer": _BASE_URL + "/en",
 }
 
 
@@ -51,123 +47,109 @@ def scrape_and_store(
 ) -> int:
     """Scrape up to *pages* search-result pages and upsert into the DB.
 
+    Uses Playwright for all HTTP requests so the TLS fingerprint and session
+    cookies stay consistent — DataDome ties cookies to browser fingerprints,
+    so switching to a plain requests.Session after warmup triggers a 403.
+
     Returns the total number of properties stored.
     """
-    session = requests.Session()
-    session.headers.update(_HEADERS_JSON)
-
-    _warmup_with_playwright(session)
-
-    stored = 0
-    for page in range(1, pages + 1):
-        try:
-            props = _fetch_page(session, page, min_price, max_price)
-            for prop in props:
-                upsert_property(prop)
-                stored += 1
-            logger.info(
-                "Page %d → %d properties (total stored: %d)", page, len(props), stored
-            )
-            if not props:
-                logger.info("No results on page %d, stopping early.", page)
-                break
-            if page < pages:
-                time.sleep(1.5)
-        except requests.HTTPError as exc:
-            logger.warning(
-                "HTTP %s on page %d — stopping.", exc.response.status_code, page
-            )
-            break
-        except Exception as exc:
-            logger.error("Error scraping page %d: %s", page, exc)
-            break
-
-    return stored
-
-
-# ─── Internal helpers ─────────────────────────────────────────────────────────
-
-
-def _warmup_with_playwright(session: requests.Session) -> None:
-    """Use a headless Chromium browser to visit the homepage.
-
-    Playwright executes JavaScript, which lets DataDome run its fingerprinting
-    challenge and set its cookie.  All resulting cookies are then transferred
-    to the requests Session so subsequent API calls are authenticated.
-    """
-    from urllib.parse import unquote
-
     from playwright.sync_api import sync_playwright
 
-    logger.info("Warming up session via Playwright (headless Chrome)…")
+    stored = 0
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(
-            user_agent=_HEADERS_JSON["User-Agent"],
+            user_agent=_USER_AGENT,
             locale="en-US",
             viewport={"width": 1280, "height": 800},
         )
         page = context.new_page()
+
+        # Warmup: let DataDome fingerprint a real browser navigation
+        logger.info("Warming up session via Playwright (headless Chrome)…")
         page.goto(_WARMUP_URL, wait_until="networkidle", timeout=30_000)
 
-        # Transfer every cookie Playwright collected into the requests session
-        for cookie in context.cookies():
-            session.cookies.set(
-                cookie["name"],
-                cookie["value"],
-                domain=cookie.get("domain", ".immoweb.be"),
-                path=cookie.get("path", "/"),
+        cookie_names = [c["name"] for c in context.cookies()]
+        logger.info("Playwright warmup complete. Cookies: %s", cookie_names)
+
+        xsrf = next(
+            (
+                unquote(c["value"])
+                for c in context.cookies()
+                if c["name"] == "XSRF-TOKEN"
+            ),
+            "",
+        )
+        if xsrf:
+            logger.info("XSRF token acquired.")
+        else:
+            logger.warning(
+                "No XSRF-TOKEN after warmup — API may still reject requests."
             )
+
+        extra_headers = {**_API_HEADERS}
+        if xsrf:
+            extra_headers["X-Xsrf-Token"] = xsrf
+
+        for page_num in range(1, pages + 1):
+            params: dict = {"countries": "BE", "page": page_num, "orderBy": "newest"}
+            if min_price:
+                params["priceMin"] = min_price
+            if max_price:
+                params["priceMax"] = max_price
+
+            url = f"{_SEARCH_URL}?{urlencode(params)}"
+            try:
+                resp = context.request.get(url, headers=extra_headers, timeout=20_000)
+            except Exception as exc:
+                logger.error("Error fetching page %d: %s", page_num, exc)
+                break
+
+            if resp.status == 403:
+                logger.error(
+                    "403 Forbidden on page %d — DataDome rejected even the Playwright "
+                    "request context. The session may have been flagged.",
+                    page_num,
+                )
+                break
+
+            if not resp.ok:
+                logger.warning("HTTP %d on page %d — stopping.", resp.status, page_num)
+                break
+
+            try:
+                data = resp.json()
+            except Exception:
+                logger.warning("Response was not JSON — falling back to HTML parsing.")
+                props = _parse_html_page(resp.text())
+            else:
+                raw_results = (
+                    data if isinstance(data, list) else data.get("results", [])
+                )
+                props = [_normalise_json(item) for item in raw_results]
+                props = [p for p in props if p]
+
+            for prop in props:
+                upsert_property(prop)
+                stored += 1
+
+            logger.info(
+                "Page %d → %d properties (total stored: %d)",
+                page_num,
+                len(props),
+                stored,
+            )
+
+            if not props:
+                logger.info("No results on page %d, stopping early.", page_num)
+                break
+
+            if page_num < pages:
+                time.sleep(1.5)
 
         browser.close()
 
-    cookie_names = list(session.cookies.keys())
-    logger.info("Playwright warmup complete. Cookies: %s", cookie_names)
-
-    xsrf = session.cookies.get("XSRF-TOKEN", "")
-    if xsrf:
-        session.headers["X-Xsrf-Token"] = unquote(xsrf)
-        logger.info("XSRF token acquired.")
-    else:
-        logger.warning("No XSRF-TOKEN after warmup — API may still reject requests.")
-
-
-def _fetch_page(
-    session: requests.Session,
-    page: int,
-    min_price: int | None,
-    max_price: int | None,
-) -> list[dict]:
-    params: dict = {"countries": "BE", "page": page, "orderBy": "newest"}
-    if min_price:
-        params["priceMin"] = min_price
-    if max_price:
-        params["priceMax"] = max_price
-
-    # Set the Referer so it looks like we navigated from inside the site
-    session.headers["Referer"] = _BASE_URL + "/en"
-
-    resp = session.get(_SEARCH_URL, params=params, timeout=20)
-
-    if resp.status_code == 403:
-        logger.error(
-            "403 Forbidden — DataDome rejected the request despite Playwright warmup. "
-            "The datadome cookie may have expired mid-scrape or the session was flagged."
-        )
-    resp.raise_for_status()
-
-    # The search-results endpoint returns JSON directly
-    try:
-        data = resp.json()
-    except Exception:
-        # Fallback: if we got HTML (e.g. a bot-check page), try HTML parsing
-        logger.warning("Response was not JSON — falling back to HTML parsing.")
-        return _parse_html_page(resp.text)
-
-    # Response shape: {"results": [...], "totalCount": N, ...}
-    raw_results = data if isinstance(data, list) else data.get("results", [])
-    props = [_normalise_json(item) for item in raw_results]
-    return [p for p in props if p]
+    return stored
 
 
 def _parse_html_page(html: str) -> list[dict]:
