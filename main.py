@@ -1248,12 +1248,29 @@ HTML = """
       <!-- TAB: SCENARIO B -->
       <div class="tab-content" id="tab-compare">
         <div class="panel-body">
-          <div class="info-box">
-            <strong>Scenario B</strong> inherits price, region, property type, residence use and insurance from Scenario A. Adjust rate, term, and/or down payment to compare.
+
+          <div class="field">
+            <label>Property Price B</label>
+            <div class="input-wrap">
+              <input type="number" id="priceB" value="350000" min="10000" step="1000"
+                oninput="onNumberInput(this); debouncedCalc()"/>
+              <span class="unit">€</span>
+            </div>
+            <div class="error-msg" id="err-priceB"></div>
           </div>
 
           <div class="field">
-            <label>Rate B — <span id="rateBDisplay">3.50</span>%</label>
+            <label>Down Payment B</label>
+            <div class="input-wrap">
+              <input type="number" id="downB" value="70000" min="0" step="1000"
+                oninput="onNumberInput(this); debouncedCalc()"/>
+              <span class="unit">€</span>
+            </div>
+            <div class="error-msg" id="err-downB"></div>
+          </div>
+
+          <div class="field">
+            <label>Annual Interest Rate B — <span id="rateBDisplay">3.50</span>%</label>
             <div class="slider-wrap">
               <input type="range" id="rateB" min="0.5" max="8" step="0.05" value="3.5"
                 oninput="document.getElementById('rateBDisplay').textContent=parseFloat(this.value).toFixed(2);
@@ -1264,7 +1281,7 @@ HTML = """
           </div>
 
           <div class="field">
-            <label>Term B — <span id="termBDisplay">20</span> years</label>
+            <label>Loan Term B — <span id="termBDisplay">20</span> years</label>
             <div class="slider-wrap">
               <input type="range" id="termB" min="5" max="30" step="1" value="20"
                 oninput="document.getElementById('termBDisplay').textContent=this.value;
@@ -1272,16 +1289,6 @@ HTML = """
                          debouncedCalc();"/>
               <span class="range-val"><span id="termBVal">20</span>y</span>
             </div>
-          </div>
-
-          <div class="field">
-            <label>Down Payment B</label>
-            <div class="input-wrap">
-              <input type="number" id="downB" value="70000" min="0" step="1000"
-                oninput="debouncedCalc()"/>
-              <span class="unit">€</span>
-            </div>
-            <div class="error-msg" id="err-downB"></div>
           </div>
 
           <div class="field">
@@ -1295,6 +1302,65 @@ HTML = """
                 <input type="radio" name="typeB" id="straightB" value="straight" onchange="debouncedCalc()"/>
                 <label for="straightB">Straight-line<br/><small style="color:inherit;opacity:.6">Fixed capital</small></label>
               </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Belgian Region B</label>
+            <div class="input-wrap">
+              <select id="regionB" onchange="debouncedCalc()">
+                <option value="flanders">Flanders — 2% (primary) / 12% (invest.)</option>
+                <option value="brussels">Brussels — 12.5% registration</option>
+                <option value="wallonia">Wallonia — 12.5% registration</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Property Type B</label>
+            <div class="radio-group">
+              <div class="radio-btn">
+                <input type="radio" name="buildB" id="existingB" value="existing" checked onchange="debouncedCalc()"/>
+                <label for="existingB">Existing<br/><small style="color:inherit;opacity:.6">Registration duty</small></label>
+              </div>
+              <div class="radio-btn">
+                <input type="radio" name="buildB" id="newbuildB" value="new" onchange="debouncedCalc()"/>
+                <label for="newbuildB">New build<br/><small style="color:inherit;opacity:.6">21% VAT</small></label>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Residence Use B</label>
+            <div class="radio-group">
+              <div class="radio-btn">
+                <input type="radio" name="residenceB" id="primaryB" value="primary" checked onchange="debouncedCalc()"/>
+                <label for="primaryB">Primary<br/><small style="color:inherit;opacity:.6">Abatements apply</small></label>
+              </div>
+              <div class="radio-btn">
+                <input type="radio" name="residenceB" id="secondaryB" value="secondary" onchange="debouncedCalc()"/>
+                <label for="secondaryB">Secondary / invest.<br/><small style="color:inherit;opacity:.6">No abatements</small></label>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Life Insurance Rate B — <span id="lifeBDisplay">0.20</span>%/yr</label>
+            <div class="slider-wrap">
+              <input type="range" id="lifeRateB" min="0.05" max="0.60" step="0.05" value="0.20"
+                oninput="document.getElementById('lifeBDisplay').textContent=parseFloat(this.value).toFixed(2);
+                         document.getElementById('lifeBVal').textContent=parseFloat(this.value).toFixed(2);
+                         debouncedCalc();"/>
+              <span class="range-val"><span id="lifeBVal">0.20</span>%</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Fire Insurance B (annual)</label>
+            <div class="input-wrap">
+              <input type="number" id="fireAnnualB" value="350" min="100" max="2000" step="50"
+                oninput="debouncedCalc()"/>
+              <span class="unit">€</span>
             </div>
           </div>
 
@@ -1313,7 +1379,7 @@ HTML = """
             <label>Monthly Take Home Pay</label>
             <div class="input-wrap">
               <input type="number" id="netIncome" value="5000" min="500" step="100"
-                oninput="debouncedCalc(); renderAffordabilityEstimator();"/>
+                oninput="renderAffordabilityEstimator();"/>
               <span class="unit">€</span>
             </div>
           </div>
@@ -1358,9 +1424,6 @@ HTML = """
 
           <div id="afford-estimator" style="margin-top:8px;"></div>
 
-          <div id="afford-results" style="margin-top:16px;">
-            <div class="info-box" style="color:var(--muted)">Calculate Scenario A to also see how a specific loan compares against your income ratio.</div>
-          </div>
         </div>
       </div>
 
@@ -1412,6 +1475,7 @@ HTML = """
 let chartInstance = null;
 let lastDataA = null;
 let lastDataB = null;
+let lastRendered = null;
 let debounceTimer = null;
 let activeTab = 'main';
 
@@ -1433,7 +1497,7 @@ function switchTab(name) {
   });
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  if (name === 'afford') { renderAffordabilityEstimator(); if (lastDataA) renderAffordability(); }
+  if (name === 'afford') { renderAffordabilityEstimator(); }
 }
 
 // ─── PROPERTIES ──────────────────────────────────────────────────────────────
@@ -1564,16 +1628,38 @@ function validate() {
 }
 
 function validateB() {
-  const price = parseFloat(document.getElementById('price').value) || 0;
+  let ok = true;
+  const priceB = parseFloat(document.getElementById('priceB').value) || 0;
   const downB = parseFloat(document.getElementById('downB').value) || 0;
+  const errPriceB = document.getElementById('err-priceB');
   const errDownB = document.getElementById('err-downB');
-  if (downB >= price) {
+
+  if (priceB < 10000) {
+    errPriceB.textContent = 'Price must be at least €10,000';
+    errPriceB.classList.add('visible');
+    document.getElementById('priceB').classList.add('input-error');
+    ok = false;
+  } else {
+    errPriceB.classList.remove('visible');
+    document.getElementById('priceB').classList.remove('input-error');
+  }
+
+  if (downB < 0) {
+    errDownB.textContent = 'Down payment cannot be negative';
+    errDownB.classList.add('visible');
+    document.getElementById('downB').classList.add('input-error');
+    ok = false;
+  } else if (downB >= priceB) {
     errDownB.textContent = 'Down payment B must be less than the property price';
     errDownB.classList.add('visible');
-    return false;
+    document.getElementById('downB').classList.add('input-error');
+    ok = false;
+  } else {
+    errDownB.classList.remove('visible');
+    document.getElementById('downB').classList.remove('input-error');
   }
-  errDownB.classList.remove('visible');
-  return true;
+
+  return ok;
 }
 
 // ─── DEBOUNCED CALCULATION ────────────────────────────────────────────────────
@@ -1599,43 +1685,50 @@ function getParamsA() {
 }
 
 function getParamsB() {
-  const a = getParamsA();
   return {
-    ...a,
+    price: parseFloat(document.getElementById('priceB').value),
     down: parseFloat(document.getElementById('downB').value),
     rate: parseFloat(document.getElementById('rateB').value),
     term: parseInt(document.getElementById('termB').value),
     loan_type: document.querySelector('input[name="typeB"]:checked').value,
+    region: document.getElementById('regionB').value,
+    is_new_build: document.querySelector('input[name="buildB"]:checked').value === 'new',
+    primary_residence: document.querySelector('input[name="residenceB"]:checked').value === 'primary',
+    life_insurance_rate: parseFloat(document.getElementById('lifeRateB').value),
+    fire_insurance_annual: parseFloat(document.getElementById('fireAnnualB').value),
   };
 }
 
 // ─── MAIN CALCULATE ───────────────────────────────────────────────────────────
 function calculate() {
-  if (!validate()) return;
-  const paramsA = getParamsA();
-  const compareActive = activeTab === 'compare' && validateB();
-
-  const requests = [
-    fetch('/calculate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(paramsA) }).then(r => r.json())
-  ];
-  if (compareActive) {
-    requests.push(
-      fetch('/calculate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(getParamsB()) }).then(r => r.json())
-    );
+  if (activeTab === 'compare') {
+    if (!validateB()) return;
+    const paramsB = getParamsB();
+    fetch('/calculate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(paramsB) })
+      .then(r => r.json())
+      .then(data => {
+        lastDataB = data;
+        renderResultsB(lastDataB);
+      });
+    return;
   }
 
-  Promise.all(requests).then(results => {
-    lastDataA = results[0];
-    lastDataB = results[1] || null;
-    saveToURL(paramsA, compareActive ? getParamsB() : null);
-    renderResults(lastDataA, lastDataB);
-    if (activeTab === 'afford') renderAffordability();
-    searchProperties();
-  });
+  if (!validate()) return;
+  const paramsA = getParamsA();
+
+  fetch('/calculate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(paramsA) })
+    .then(r => r.json())
+    .then(data => {
+      lastDataA = data;
+      saveToURL(paramsA, null);
+      renderResults(lastDataA, null);
+      searchProperties();
+    });
 }
 
 // ─── RENDER RESULTS ───────────────────────────────────────────────────────────
 function renderResults(d, dB) {
+  lastRendered = d;
   const el = document.getElementById('results');
   const bc = d.buying_costs;
 
@@ -1852,15 +1945,21 @@ function renderCompare(a, b) {
   `;
 }
 
+// ─── RENDER RESULTS B (standalone, no cross-tab data) ─────────────────────────
+function renderResultsB(d) {
+  renderResults(d, null);
+}
+
 // ─── CHART ────────────────────────────────────────────────────────────────────
 function drawChart(d, dB) {
   if (chartInstance) chartInstance.destroy();
   const ctx = document.getElementById('myChart').getContext('2d');
 
   const labels = d.annual.map(r => 'Y' + r.year);
+  const labelSuffix = dB ? ' A' : '';
   const datasets = [
     {
-      label: 'Balance A',
+      label: 'Balance' + labelSuffix,
       data: d.annual.map(r => r.balance),
       borderColor: '#c9a84c',
       backgroundColor: 'rgba(201,168,76,0.08)',
@@ -1868,7 +1967,7 @@ function drawChart(d, dB) {
       pointBackgroundColor: '#c9a84c',
     },
     {
-      label: 'Cumul. Interest A',
+      label: 'Cumul. Interest' + labelSuffix,
       data: d.annual.map(r => r.cum_interest),
       borderColor: '#e05555',
       backgroundColor: 'rgba(224,85,85,0.05)',
@@ -1938,7 +2037,7 @@ function drawChart(d, dB) {
 
 // ─── OVERPAYMENT SIMULATOR ────────────────────────────────────────────────────
 function updateOverpayment() {
-  if (!lastDataA) return;
+  if (!lastRendered) return;
   const extra = parseFloat(document.getElementById('extraPayment').value) || 0;
   document.getElementById('extraVal').textContent = extra;
   const el = document.getElementById('overpay-results');
@@ -1949,7 +2048,7 @@ function updateOverpayment() {
     return;
   }
 
-  const d = lastDataA;
+  const d = lastRendered;
   if (d.loan_type !== 'annuity') {
     el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Overpayment simulation is available for annuity loans only.</div>';
     return;
@@ -2176,8 +2275,8 @@ function renderAffordability() {
 
 // ─── CSV EXPORT ───────────────────────────────────────────────────────────────
 function exportCSV() {
-  if (!lastDataA) return;
-  const d = lastDataA;
+  if (!lastRendered) return;
+  const d = lastRendered;
   const rows = [['Month', 'Payment (€)', 'Capital (€)', 'Interest (€)', 'Balance (€)']];
   d.monthly_schedule.forEach(r => {
     rows.push([r.month, Math.round(r.payment), Math.round(r.capital), Math.round(r.interest), Math.round(r.balance)]);
