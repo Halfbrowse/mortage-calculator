@@ -1422,27 +1422,38 @@ HTML = """
             </div>
           </div>
 
-          <div id="afford-estimator" style="margin-top:8px;"></div>
-
         </div>
       </div>
 
     </div>
   </div>
 
-  <!-- RIGHT: RESULTS -->
-  <div class="results" id="results">
-    <div class="panel">
-      <div class="empty">
-        <div class="empty-icon">🏠</div>
-        <p>Enter your loan details — results update automatically as you type.</p>
+  <!-- RIGHT: RESULTS (per-tab) -->
+  <div style="min-width:0">
+    <div class="results" id="results-main">
+      <div class="panel">
+        <div class="empty">
+          <div class="empty-icon">🏠</div>
+          <p>Enter your loan details — results update automatically as you type.</p>
+        </div>
       </div>
+    </div>
+    <div class="results" id="results-compare" style="display:none">
+      <div class="panel">
+        <div class="empty">
+          <div class="empty-icon">📊</div>
+          <p>Enter Scenario B details — results appear here.</p>
+        </div>
+      </div>
+    </div>
+    <div class="results" id="results-afford" style="display:none">
+      <div id="afford-estimator"></div>
     </div>
   </div>
 </div>
 
 <!-- PROPERTIES FULL-WIDTH SECTION -->
-<section id="prop-section" class="visible">
+<section id="prop-section">
   <div class="panel" style="border-radius:14px;">
     <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
       <span>Matching Listings</span>
@@ -1497,6 +1508,16 @@ function switchTab(name) {
   });
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
+
+  // Show the correct right-side results panel
+  ['results-main', 'results-compare', 'results-afford'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+  document.getElementById('results-' + name).style.display = '';
+
+  // Properties section only for Loan tab
+  document.getElementById('prop-section').classList.toggle('visible', name === 'main');
+
   if (name === 'afford') { renderAffordabilityEstimator(); }
 }
 
@@ -1722,14 +1743,15 @@ function calculate() {
       lastDataA = data;
       saveToURL(paramsA, null);
       renderResults(lastDataA, null);
+      document.getElementById('prop-section').classList.add('visible');
       searchProperties();
     });
 }
 
 // ─── RENDER RESULTS ───────────────────────────────────────────────────────────
-function renderResults(d, dB) {
+function renderResults(d, dB, targetId = 'results-main') {
   lastRendered = d;
-  const el = document.getElementById('results');
+  const el = document.getElementById(targetId);
   const bc = d.buying_costs;
 
   const ltvLimit = d.primary_residence ? 90 : 80;
@@ -1947,7 +1969,7 @@ function renderCompare(a, b) {
 
 // ─── RENDER RESULTS B (standalone, no cross-tab data) ─────────────────────────
 function renderResultsB(d) {
-  renderResults(d, null);
+  renderResults(d, null, 'results-compare');
 }
 
 // ─── CHART ────────────────────────────────────────────────────────────────────
