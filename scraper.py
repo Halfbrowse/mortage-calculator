@@ -42,7 +42,7 @@ def scrape_and_store(
 
     browser = launch(
         headless=True,
-        locale="en-US",
+        locale="en-BE",
         humanize=True,
     )
 

@@ -42,8 +42,8 @@ init_db()
 _scrape_lock = threading.Lock()
 
 # ─── AUTO-SCRAPE SCHEDULER ───────────────────────────────────────────────────
-_SCRAPE_INTERVAL_HOURS = int(os.environ.get("SCRAPE_INTERVAL_HOURS", 6))
-_SCRAPE_PAGES = int(os.environ.get("SCRAPE_PAGES", 10))
+_SCRAPE_INTERVAL_HOURS = int(os.environ.get("SCRAPE_INTERVAL_HOURS", 24))
+_SCRAPE_PAGES = min(int(os.environ.get("SCRAPE_PAGES", 2)), 5)  # hard cap at 5 pages
 
 
 def _background_scraper():
@@ -1207,9 +1207,7 @@ HTML = """
             <label>Annual Interest Rate — <span id="rateDisplay">3.50</span>%</label>
             <div class="slider-wrap">
               <input type="range" id="rate" min="0.5" max="8" step="0.05" value="3.5"
-                oninput="document.getElementById('rateDisplay').textContent=parseFloat(this.value).toFixed(2);
-                         document.getElementById('rateVal').textContent=parseFloat(this.value).toFixed(2);
-                         debouncedCalc();"/>
+                oninput="document.getElementById('rateDisplay').textContent=parseFloat(this.value).toFixed(2); document.getElementById('rateVal').textContent=parseFloat(this.value).toFixed(2); debouncedCalc();"/>
               <span class="range-val"><span id="rateVal">3.50</span>%</span>
             </div>
           </div>
@@ -1218,9 +1216,7 @@ HTML = """
             <label>Loan Term — <span id="termDisplay">20</span> years</label>
             <div class="slider-wrap">
               <input type="range" id="term" min="5" max="30" step="1" value="20"
-                oninput="document.getElementById('termDisplay').textContent=this.value;
-                         document.getElementById('termVal').textContent=this.value;
-                         debouncedCalc();"/>
+                oninput="document.getElementById('termDisplay').textContent=this.value; document.getElementById('termVal').textContent=this.value; debouncedCalc();"/>
               <span class="range-val"><span id="termVal">20</span>y</span>
             </div>
           </div>
@@ -1282,9 +1278,7 @@ HTML = """
             <label>Life Insurance Rate — <span id="lifeDisplay">0.20</span>%/yr <span class="tip-wrap"><span class="tip-icon" tabindex="0" onclick="toggleTip(this)">?</span><span class="tip-bubble">Schuldsaldoverzekering (SSV): covers your outstanding loan balance if you pass away during the mortgage term. Belgian banks nearly always require it. Rate depends on age and health — typically 0.10–0.40%/yr. A 2% Belgian insurance premium tax (IPT) is added on top.</span></span></label>
             <div class="slider-wrap">
               <input type="range" id="lifeRate" min="0.05" max="0.60" step="0.05" value="0.20"
-                oninput="document.getElementById('lifeDisplay').textContent=parseFloat(this.value).toFixed(2);
-                         document.getElementById('lifeVal').textContent=parseFloat(this.value).toFixed(2);
-                         debouncedCalc();"/>
+                oninput="document.getElementById('lifeDisplay').textContent=parseFloat(this.value).toFixed(2); document.getElementById('lifeVal').textContent=parseFloat(this.value).toFixed(2); debouncedCalc();"/>
               <span class="range-val"><span id="lifeVal">0.20</span>%</span>
             </div>
           </div>
@@ -1331,9 +1325,7 @@ HTML = """
             <label>Annual Interest Rate B — <span id="rateBDisplay">3.50</span>%</label>
             <div class="slider-wrap">
               <input type="range" id="rateB" min="0.5" max="8" step="0.05" value="3.5"
-                oninput="document.getElementById('rateBDisplay').textContent=parseFloat(this.value).toFixed(2);
-                         document.getElementById('rateBVal').textContent=parseFloat(this.value).toFixed(2);
-                         debouncedCalc();"/>
+                oninput="document.getElementById('rateBDisplay').textContent=parseFloat(this.value).toFixed(2); document.getElementById('rateBVal').textContent=parseFloat(this.value).toFixed(2); debouncedCalc();"/>
               <span class="range-val"><span id="rateBVal">3.50</span>%</span>
             </div>
           </div>
@@ -1342,9 +1334,7 @@ HTML = """
             <label>Loan Term B — <span id="termBDisplay">20</span> years</label>
             <div class="slider-wrap">
               <input type="range" id="termB" min="5" max="30" step="1" value="20"
-                oninput="document.getElementById('termBDisplay').textContent=this.value;
-                         document.getElementById('termBVal').textContent=this.value;
-                         debouncedCalc();"/>
+                oninput="document.getElementById('termBDisplay').textContent=this.value; document.getElementById('termBVal').textContent=this.value; debouncedCalc();"/>
               <span class="range-val"><span id="termBVal">20</span>y</span>
             </div>
           </div>
@@ -1406,9 +1396,7 @@ HTML = """
             <label>Life Insurance Rate B — <span id="lifeBDisplay">0.20</span>%/yr</label>
             <div class="slider-wrap">
               <input type="range" id="lifeRateB" min="0.05" max="0.60" step="0.05" value="0.20"
-                oninput="document.getElementById('lifeBDisplay').textContent=parseFloat(this.value).toFixed(2);
-                         document.getElementById('lifeBVal').textContent=parseFloat(this.value).toFixed(2);
-                         debouncedCalc();"/>
+                oninput="document.getElementById('lifeBDisplay').textContent=parseFloat(this.value).toFixed(2); document.getElementById('lifeBVal').textContent=parseFloat(this.value).toFixed(2); debouncedCalc();"/>
               <span class="range-val"><span id="lifeBVal">0.20</span>%</span>
             </div>
           </div>
@@ -1464,9 +1452,7 @@ HTML = """
             <label>Loan Term — <span id="affordTermDisplay">20</span> years</label>
             <div class="slider-wrap">
               <input type="range" id="affordTerm" min="5" max="30" step="1" value="20"
-                oninput="document.getElementById('affordTermDisplay').textContent=this.value;
-                         document.getElementById('affordTermVal').textContent=this.value;
-                         renderAffordabilityEstimator();"/>
+                oninput="document.getElementById('affordTermDisplay').textContent=this.value; document.getElementById('affordTermVal').textContent=this.value; renderAffordabilityEstimator();"/>
               <span class="range-val"><span id="affordTermVal">20</span>y</span>
             </div>
           </div>
@@ -1521,9 +1507,7 @@ HTML = """
             <label>Remaining Term — <span id="refiTermDisplay">20</span> years</label>
             <div class="slider-wrap">
               <input type="range" id="refiTerm" min="1" max="30" step="1" value="20"
-                oninput="document.getElementById('refiTermDisplay').textContent=this.value;
-                         document.getElementById('refiTermVal').textContent=this.value;
-                         calcRefi();"/>
+                oninput="document.getElementById('refiTermDisplay').textContent=this.value; document.getElementById('refiTermVal').textContent=this.value; calcRefi();"/>
               <span class="range-val"><span id="refiTermVal">20</span>y</span>
             </div>
           </div>
@@ -1532,9 +1516,7 @@ HTML = """
             <label>New Rate Offered — <span id="refiNewRateDisplay">2.80</span>%</label>
             <div class="slider-wrap">
               <input type="range" id="refiNewRate" min="0.5" max="8" step="0.05" value="2.80"
-                oninput="document.getElementById('refiNewRateDisplay').textContent=parseFloat(this.value).toFixed(2);
-                         document.getElementById('refiNewRateVal').textContent=parseFloat(this.value).toFixed(2);
-                         calcRefi();"/>
+                oninput="document.getElementById('refiNewRateDisplay').textContent=parseFloat(this.value).toFixed(2); document.getElementById('refiNewRateVal').textContent=parseFloat(this.value).toFixed(2); calcRefi();"/>
               <span class="range-val"><span id="refiNewRateVal">2.80</span>%</span>
             </div>
           </div>

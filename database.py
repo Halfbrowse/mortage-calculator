@@ -3,6 +3,7 @@ import sqlite3
 from contextlib import contextmanager
 
 DB_PATH = os.environ.get("DB_PATH", "properties.db")
+MAX_PROPERTIES = int(os.environ.get("MAX_PROPERTIES", 100))
 
 
 def init_db():
@@ -53,6 +54,16 @@ def upsert_property(prop: dict):
             """,
             prop,
         )
+        # Keep DB within MAX_PROPERTIES limit — delete oldest rows by scraped_at
+        conn.execute(
+            """
+            DELETE FROM properties WHERE id IN (
+                SELECT id FROM properties ORDER BY scraped_at ASC
+                LIMIT MAX(0, (SELECT COUNT(*) FROM properties) - ?)
+            )
+            """,
+            (MAX_PROPERTIES,),
+        )
 
 
 def get_properties(
@@ -82,7 +93,9 @@ def get_properties(
 
 def get_stats() -> dict:
     with _conn() as conn:
-        count = conn.execute("SELECT COUNT(*) FROM properties WHERE price > 0").fetchone()[0]
+        count = conn.execute(
+            "SELECT COUNT(*) FROM properties WHERE price > 0"
+        ).fetchone()[0]
         row = conn.execute(
             "SELECT MIN(price), MAX(price) FROM properties WHERE price > 0"
         ).fetchone()
