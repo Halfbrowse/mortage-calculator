@@ -1177,6 +1177,7 @@ HTML = """
         <button class="tab-btn active" onclick="switchTab('main')">Loan</button>
         <button class="tab-btn" onclick="switchTab('compare')">Compare B</button>
         <button class="tab-btn" onclick="switchTab('afford')">Affordability</button>
+        <button class="tab-btn" onclick="switchTab('refi')">Refi</button>
       </div>
 
       <!-- TAB: MAIN LOAN -->
@@ -1491,6 +1492,74 @@ HTML = """
         </div>
       </div>
 
+      <!-- TAB: REFINANCING -->
+      <div class="tab-content" id="tab-refi">
+        <div class="panel-body">
+          <div class="info-box">
+            Is it worth switching to a lower rate? Enter your current mortgage details and a new rate offer below. Belgian law caps early repayment penalties at <strong>3 months' interest</strong> on the outstanding balance.
+          </div>
+
+          <div class="field">
+            <label>Current Remaining Balance</label>
+            <div class="input-wrap">
+              <input type="number" id="refiBalance" value="200000" min="1000" step="1000"
+                oninput="calcRefi();"/>
+              <span class="unit">€</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Current Interest Rate</label>
+            <div class="input-wrap">
+              <input type="number" id="refiCurrentRate" value="3.50" min="0.1" max="15" step="0.05"
+                oninput="calcRefi();"/>
+              <span class="unit">%</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Remaining Term — <span id="refiTermDisplay">20</span> years</label>
+            <div class="slider-wrap">
+              <input type="range" id="refiTerm" min="1" max="30" step="1" value="20"
+                oninput="document.getElementById('refiTermDisplay').textContent=this.value;
+                         document.getElementById('refiTermVal').textContent=this.value;
+                         calcRefi();"/>
+              <span class="range-val"><span id="refiTermVal">20</span>y</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>New Rate Offered — <span id="refiNewRateDisplay">2.80</span>%</label>
+            <div class="slider-wrap">
+              <input type="range" id="refiNewRate" min="0.5" max="8" step="0.05" value="2.80"
+                oninput="document.getElementById('refiNewRateDisplay').textContent=parseFloat(this.value).toFixed(2);
+                         document.getElementById('refiNewRateVal').textContent=parseFloat(this.value).toFixed(2);
+                         calcRefi();"/>
+              <span class="range-val"><span id="refiNewRateVal">2.80</span>%</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Early Repayment Penalty (auto-calculated, editable)</label>
+            <div class="input-wrap">
+              <input type="number" id="refiPenalty" value="0" min="0" step="100"
+                oninput="calcRefi();"/>
+              <span class="unit">€</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>New Loan Costs / Refinancing Fees (auto-calculated, editable)</label>
+            <div class="input-wrap">
+              <input type="number" id="refiCosts" value="0" min="0" step="100"
+                oninput="calcRefi();"/>
+              <span class="unit">€</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -1514,6 +1583,16 @@ HTML = """
     </div>
     <div class="results" id="results-afford" style="display:none">
       <div id="afford-estimator"></div>
+    </div>
+    <div class="results" id="results-refi" style="display:none">
+      <div id="refi-estimator">
+        <div class="panel">
+          <div class="empty">
+            <div class="empty-icon">🔄</div>
+            <p>Enter your current mortgage details to see if refinancing makes sense.</p>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1553,6 +1632,41 @@ let chartInstance = null;
 let lastDataA = null;
 let lastDataB = null;
 let lastRendered = null;
+let overpaymentSchedule = null; // null = original, array = revised with overpayments
+let showingOverpayment = false;
+
+function toAnnual(schedule) {
+  const annual = [];
+  const years = Math.ceil(schedule.length / 12);
+  for (let yr = 1; yr <= years; yr++) {
+    const rows = schedule.slice((yr - 1) * 12, yr * 12);
+    if (!rows.length) break;
+    annual.push({
+      year: yr,
+      payment: rows.reduce((s, r) => s + r.payment, 0),
+      capital: rows.reduce((s, r) => s + r.capital, 0),
+      interest: rows.reduce((s, r) => s + r.interest, 0),
+      balance: rows[rows.length - 1].balance,
+    });
+  }
+  return annual;
+}
+
+function renderAmortTable(annualRows, label) {
+  const lbl = document.getElementById('amort-label');
+  if (lbl) lbl.textContent = label || 'Amortisation Schedule (Annual)';
+  const tbody = document.getElementById('amort-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = annualRows.map(r => `
+    <tr>
+      <td>${r.year}</td>
+      <td>${fmt(r.payment)}</td>
+      <td class="capital">${fmt(r.capital)}</td>
+      <td class="interest">${fmt(r.interest)}</td>
+      <td class="balance">${fmt(r.balance)}</td>
+    </tr>
+  `).join('');
+}
 let debounceTimer = null;
 let activeTab = 'main';
 
@@ -1617,7 +1731,7 @@ function buildSensitivityMatrix(loan, currentRatePct, currentTerm) {
 // ─── TABS ─────────────────────────────────────────────────────────────────────
 function switchTab(name) {
   activeTab = name;
-  const tabs = ['main', 'compare', 'afford'];
+  const tabs = ['main', 'compare', 'afford', 'refi'];
   document.querySelectorAll('.tab-btn').forEach((b, i) => {
     b.classList.toggle('active', tabs[i] === name);
   });
@@ -1625,7 +1739,7 @@ function switchTab(name) {
   document.getElementById('tab-' + name).classList.add('active');
 
   // Show the correct right-side results panel
-  ['results-main', 'results-compare', 'results-afford'].forEach(id => {
+  ['results-main', 'results-compare', 'results-afford', 'results-refi'].forEach(id => {
     document.getElementById(id).style.display = 'none';
   });
   document.getElementById('results-' + name).style.display = '';
@@ -1634,6 +1748,7 @@ function switchTab(name) {
   document.getElementById('prop-section').classList.toggle('visible', name === 'main');
 
   if (name === 'afford') { renderAffordabilityEstimator(); }
+  if (name === 'refi') { calcRefi(); }
 }
 
 // ─── PROPERTIES ──────────────────────────────────────────────────────────────
@@ -1866,6 +1981,8 @@ function calculate() {
 // ─── RENDER RESULTS ───────────────────────────────────────────────────────────
 function renderResults(d, dB, targetId = 'results-main') {
   lastRendered = d;
+  overpaymentSchedule = null;
+  showingOverpayment = false;
   const el = document.getElementById(targetId);
   const bc = d.buying_costs;
 
@@ -1998,9 +2115,12 @@ function renderResults(d, dB, targetId = 'results-main') {
     <div class="panel animate" style="animation-delay:0.2s">
       <div class="panel-header">
         <div class="panel-header-left" style="display:flex;align-items:center;gap:10px;">
-          Amortisation Schedule (Annual)
+          <span id="amort-label">Amortisation Schedule (Annual)</span>
         </div>
-        <button class="btn-secondary" onclick="exportCSV()">↓ CSV</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn-secondary" id="toggleOverpay" style="display:none" onclick="toggleOverpayTable()">⚡ With Overpayments</button>
+          <button class="btn-secondary" onclick="exportCSV()">↓ CSV</button>
+        </div>
       </div>
       <div class="panel-body" style="padding:0">
         <div class="table-wrap">
@@ -2014,7 +2134,7 @@ function renderResults(d, dB, targetId = 'results-main') {
                 <th>Balance</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="amort-tbody">
               ${d.annual.map(r => `
                 <tr>
                   <td>${r.year}</td>
@@ -2186,26 +2306,31 @@ function updateOverpayment() {
   const extra = parseFloat(document.getElementById('extraPayment').value) || 0;
   document.getElementById('extraVal').textContent = extra;
   const el = document.getElementById('overpay-results');
+  const toggleBtn = document.getElementById('toggleOverpay');
   if (!el) return;
 
   if (extra === 0) {
+    overpaymentSchedule = null;
+    showingOverpayment = false;
+    if (toggleBtn) toggleBtn.style.display = 'none';
+    renderAmortTable(lastRendered.annual, 'Amortisation Schedule (Annual)');
     el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Move the slider to simulate extra monthly repayments.</div>';
     return;
   }
 
   const d = lastRendered;
   if (d.loan_type !== 'annuity') {
+    overpaymentSchedule = null;
+    if (toggleBtn) toggleBtn.style.display = 'none';
     el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Overpayment simulation is available for annuity loans only.</div>';
     return;
   }
 
   const loan = d.loan_amount;
-  const rate = d.life_insurance_rate; // not needed here — get monthly rate from annual data
-  // Derive monthly_rate from monthly_payment and loan_amount
   const mp = d.monthly_payment;
   const n0 = d.term * 12;
 
-  // Simulate with extra payment
+  // Simulate with extra payment — now returns full monthly schedule
   const simResult = simulateExtra(loan, mp, extra, d.term);
   const monthsSaved = n0 - simResult.months;
   const interestSaved = d.total_interest - simResult.totalInterest;
@@ -2215,6 +2340,15 @@ function updateOverpayment() {
   const timeStr = yearsSaved > 0
     ? (yearsSaved + 'y ' + (remMonths > 0 ? remMonths + 'm' : ''))
     : (remMonths + ' months');
+
+  // Store revised schedule and update table
+  overpaymentSchedule = simResult.monthlySchedule;
+  showingOverpayment = true;
+  if (toggleBtn) {
+    toggleBtn.style.display = '';
+    toggleBtn.textContent = '📋 Show Original';
+  }
+  renderAmortTable(toAnnual(overpaymentSchedule), 'Amortisation Schedule — With Overpayments');
 
   el.innerHTML = `
     <div class="overpay-result">
@@ -2232,6 +2366,19 @@ function updateOverpayment() {
   `;
 }
 
+function toggleOverpayTable() {
+  if (!lastRendered || !overpaymentSchedule) return;
+  const btn = document.getElementById('toggleOverpay');
+  showingOverpayment = !showingOverpayment;
+  if (showingOverpayment) {
+    renderAmortTable(toAnnual(overpaymentSchedule), 'Amortisation Schedule — With Overpayments');
+    if (btn) btn.textContent = '📋 Show Original';
+  } else {
+    renderAmortTable(lastRendered.annual, 'Amortisation Schedule (Annual)');
+    if (btn) btn.textContent = '⚡ With Overpayments';
+  }
+}
+
 function simulateExtra(loan, requiredPayment, extra, termYears) {
   // Find monthly_rate from requiredPayment and loan using Newton's method approximation
   // Instead, derive from the schedule data approximation:
@@ -2239,6 +2386,7 @@ function simulateExtra(loan, requiredPayment, extra, termYears) {
   let balance = loan;
   let months = 0;
   let totalInterest = 0;
+  const monthlySchedule = [];
 
   // Get monthly rate: payment = loan * r(1+r)^n / ((1+r)^n - 1)
   // Use bisection to find r
@@ -2256,9 +2404,11 @@ function simulateExtra(loan, requiredPayment, extra, termYears) {
     const interest = balance * monthlyRate;
     totalInterest += interest;
     const totalPmt = Math.min(balance + interest, requiredPayment + extra);
-    balance -= (totalPmt - interest);
+    const capital = totalPmt - interest;
+    balance = Math.max(balance - capital, 0);
+    monthlySchedule.push({ month: months, payment: totalPmt, capital, interest, balance });
   }
-  return { months, totalInterest };
+  return { months, totalInterest, monthlySchedule };
 }
 
 // ─── AFFORDABILITY ESTIMATOR (standalone, no Scenario A required) ─────────────
@@ -2455,12 +2605,122 @@ function renderAffordability() {
   `;
 }
 
+// ─── REFINANCING CALCULATOR ───────────────────────────────────────────────────
+function calcRefi() {
+  const el = document.getElementById('refi-estimator');
+  if (!el) return;
+
+  const balance  = parseFloat(document.getElementById('refiBalance').value)     || 0;
+  const curRate  = parseFloat(document.getElementById('refiCurrentRate').value) || 0;
+  const term     = parseInt(document.getElementById('refiTerm').value)           || 20;
+  const newRate  = parseFloat(document.getElementById('refiNewRate').value)     || 0;
+
+  if (balance <= 0 || curRate <= 0 || newRate <= 0) {
+    el.innerHTML = '<div class="panel"><div class="empty"><div class="empty-icon">🔄</div><p>Enter your current mortgage details to see if refinancing makes sense.</p></div></div>';
+    return;
+  }
+
+  const n = term * 12;
+  const rOld = Math.pow(1 + curRate / 100, 1/12) - 1;
+  const rNew = Math.pow(1 + newRate  / 100, 1/12) - 1;
+
+  // Monthly payments
+  const pmtOld = rOld === 0 ? balance / n : balance * (rOld * Math.pow(1+rOld, n)) / (Math.pow(1+rOld, n) - 1);
+  const pmtNew = rNew === 0 ? balance / n : balance * (rNew * Math.pow(1+rNew, n)) / (Math.pow(1+rNew, n) - 1);
+  const monthlySaving = pmtOld - pmtNew;
+
+  // Auto-fill penalty and costs if they are still at their default (0) or user hasn't touched them
+  const penaltyField = document.getElementById('refiPenalty');
+  const costsField   = document.getElementById('refiCosts');
+  const autoPenalty  = Math.round(balance * (curRate / 100 / 12) * 3);
+  const autoCosts    = Math.round(balance * 0.013);
+  if (parseFloat(penaltyField.value) === 0) penaltyField.value = autoPenalty;
+  if (parseFloat(costsField.value)   === 0) costsField.value   = autoCosts;
+
+  const penalty   = parseFloat(penaltyField.value) || 0;
+  const refiCosts = parseFloat(costsField.value)   || 0;
+  const totalCost = penalty + refiCosts;
+
+  // Total interest over remaining term (simple annuity sum)
+  let totalIntOld = 0, totalIntNew = 0, balOld = balance, balNew = balance;
+  for (let i = 0; i < n; i++) {
+    totalIntOld += balOld * rOld;
+    balOld -= (pmtOld - balOld * rOld);
+    totalIntNew += balNew * rNew;
+    balNew -= (pmtNew - balNew * rNew);
+  }
+  const interestSaved = totalIntOld - totalIntNew;
+
+  // Break-even
+  const breakEvenMonths = monthlySaving > 0 ? Math.ceil(totalCost / monthlySaving) : Infinity;
+  const breakEvenYears  = Math.floor(breakEvenMonths / 12);
+  const breakEvenRem    = breakEvenMonths % 12;
+  const breakEvenStr    = breakEvenMonths === Infinity ? 'Never'
+    : breakEvenYears > 0 ? (breakEvenYears + 'y ' + (breakEvenRem ? breakEvenRem + 'm' : ''))
+    : (breakEvenMonths + ' months');
+
+  const net5yr  = (monthlySaving * 60)  - totalCost;
+  const net10yr = (monthlySaving * 120) - totalCost;
+  const notWorthwhile = breakEvenMonths > n;
+
+  const rateColor = newRate < curRate ? 'var(--green)' : 'var(--red)';
+  const savingColor = monthlySaving > 0 ? 'var(--green)' : 'var(--red)';
+
+  el.innerHTML = `
+    <div class="panel animate">
+      <div class="panel-header">Refinancing Analysis</div>
+      <div class="panel-body">
+        ${notWorthwhile ? `<div class="ltv-warning animate" style="margin-bottom:16px">
+          ⚠️ Break-even (${breakEvenStr}) exceeds your remaining term (${term}y). Refinancing may not be worthwhile at this rate difference.
+        </div>` : ''}
+
+        <div class="stat-grid" style="grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px;">
+          <div class="stat-card" style="background:var(--card-bg)">
+            <div class="stat-label">Current Payment</div>
+            <div class="stat-val">${fmt(pmtOld)}<span class="stat-unit">/mo</span></div>
+            <div class="stat-sub">at ${curRate.toFixed(2)}%</div>
+          </div>
+          <div class="stat-card" style="background:var(--card-bg)">
+            <div class="stat-label">New Payment</div>
+            <div class="stat-val" style="color:${rateColor}">${fmt(pmtNew)}<span class="stat-unit">/mo</span></div>
+            <div class="stat-sub">at ${newRate.toFixed(2)}%</div>
+          </div>
+          <div class="stat-card" style="background:var(--card-bg)">
+            <div class="stat-label">Monthly Saving</div>
+            <div class="stat-val" style="color:${savingColor}">${fmt(Math.abs(monthlySaving))}</div>
+            <div class="stat-sub">${monthlySaving >= 0 ? 'saved per month' : 'extra per month'}</div>
+          </div>
+          <div class="stat-card" style="background:var(--card-bg)">
+            <div class="stat-label">Break-Even</div>
+            <div class="stat-val" style="color:${notWorthwhile ? 'var(--red)' : 'var(--gold)'}">${breakEvenStr}</div>
+            <div class="stat-sub">to recoup refi costs</div>
+          </div>
+        </div>
+
+        <div class="costs-list">
+          <div class="costs-section-title">Refinancing Costs</div>
+          <div class="costs-row"><span>Early repayment penalty (3 mo. interest)</span><span>${fmt(penalty)}</span></div>
+          <div class="costs-row"><span>New mortgage deed &amp; fees (~1.3%)</span><span>${fmt(refiCosts)}</span></div>
+          <div class="costs-row costs-total"><span>Total upfront cost</span><span>${fmt(totalCost)}</span></div>
+
+          <div class="costs-section-title" style="margin-top:14px">Long-Term Benefit</div>
+          <div class="costs-row"><span>Interest saved over full term</span><span style="color:var(--green)">${fmt(interestSaved)}</span></div>
+          <div class="costs-row"><span>Net benefit after 5 years</span><span style="color:${net5yr >= 0 ? 'var(--green)' : 'var(--red)'}">${net5yr >= 0 ? '+' : ''}${fmt(net5yr)}</span></div>
+          <div class="costs-row"><span>Net benefit after 10 years</span><span style="color:${net10yr >= 0 ? 'var(--green)' : 'var(--red)'}">${net10yr >= 0 ? '+' : ''}${fmt(net10yr)}</span></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // ─── CSV EXPORT ───────────────────────────────────────────────────────────────
 function exportCSV() {
   if (!lastRendered) return;
   const d = lastRendered;
+  const useOverpay = showingOverpayment && overpaymentSchedule;
+  const source = useOverpay ? overpaymentSchedule : d.monthly_schedule;
   const rows = [['Month', 'Payment (€)', 'Capital (€)', 'Interest (€)', 'Balance (€)']];
-  d.monthly_schedule.forEach(r => {
+  source.forEach(r => {
     rows.push([r.month, Math.round(r.payment), Math.round(r.capital), Math.round(r.interest), Math.round(r.balance)]);
   });
   const csv = rows.map(r => r.join(',')).join('\\n');
@@ -2468,7 +2728,7 @@ function exportCSV() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'mortgage_schedule.csv';
+  a.download = useOverpay ? 'mortgage_schedule_overpayment.csv' : 'mortgage_schedule.csv';
   a.click();
   URL.revokeObjectURL(url);
 }
