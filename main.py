@@ -1096,6 +1096,60 @@ HTML = """
       font-size: 12px;
     }
     .site-footer p { margin-bottom: 12px; }
+
+    /* TOOLTIPS */
+    .tip-wrap { position: relative; display: inline-flex; align-items: center; vertical-align: middle; margin-left: 4px; }
+    .tip-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 15px; height: 15px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 50%;
+      font-size: 9px; color: var(--muted); cursor: help; flex-shrink: 0;
+      font-style: normal; line-height: 1;
+      transition: border-color 0.15s, color 0.15s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .tip-icon:hover, .tip-icon:focus { border-color: var(--gold); color: var(--gold); outline: none; }
+    .tip-bubble {
+      position: absolute;
+      bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+      background: var(--card); border: 1px solid var(--gold); border-radius: 8px;
+      padding: 10px 13px; font-size: 11px; color: var(--text); line-height: 1.6;
+      width: 230px; max-width: 80vw; z-index: 200;
+      opacity: 0; pointer-events: none; transition: opacity 0.15s;
+      white-space: normal; text-align: left; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .tip-bubble::after {
+      content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+      border: 5px solid transparent; border-top-color: var(--gold);
+    }
+    .tip-wrap:hover .tip-bubble, .tip-bubble.visible { opacity: 1; pointer-events: auto; }
+
+    /* SENSITIVITY MATRIX */
+    .sensitivity-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; border: 1px solid var(--border); }
+    .sensitivity-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 340px; }
+    .sensitivity-table th {
+      padding: 10px 14px; background: var(--surface);
+      font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--gold); font-weight: 400; text-align: right;
+      border-bottom: 1px solid var(--border);
+    }
+    .sensitivity-table th:first-child { text-align: left; }
+    .sensitivity-table td {
+      padding: 9px 14px; text-align: right;
+      color: var(--muted); border-bottom: 1px solid rgba(37,42,56,0.5); transition: background 0.1s;
+    }
+    .sensitivity-table td.rate-label { text-align: left; color: var(--text); }
+    .sensitivity-table td.rate-label.current-rate { color: var(--gold); font-weight: 500; }
+    .sensitivity-table td.cell-active { background: var(--gold-dim); color: var(--gold); font-weight: 500; }
+    .sensitivity-table tr:hover td { background: var(--surface); }
+    .sensitivity-table tr:hover td.cell-active { background: rgba(201,168,76,0.2); }
+    .sensitivity-note { font-size: 11px; color: var(--muted); padding: 10px 16px; border-top: 1px solid var(--border); }
+
+    /* MOBILE: scroll shadow on overflowing tables */
+    @media (max-width: 640px) {
+      .table-wrap, .sensitivity-wrap { box-shadow: inset -24px 0 16px -16px rgba(13,15,20,0.7); }
+      .panel-header { font-size: 10px; }
+    }
   </style>
 </head>
 <body>
@@ -1171,7 +1225,7 @@ HTML = """
           </div>
 
           <div class="field">
-            <label>Repayment Type</label>
+            <label>Repayment Type <span class="tip-wrap"><span class="tip-icon" tabindex="0" onclick="toggleTip(this)">?</span><span class="tip-bubble">Annuity: equal monthly payments throughout — more interest early, more capital later. Straight-line: fixed capital each month, so payments decrease over time and you pay less total interest overall.</span></span></label>
             <div class="radio-group">
               <div class="radio-btn">
                 <input type="radio" name="type" id="annuity" value="annuity" checked onchange="debouncedCalc()"/>
@@ -1224,7 +1278,7 @@ HTML = """
           </div>
 
           <div class="field">
-            <label>Life Insurance Rate — <span id="lifeDisplay">0.20</span>%/yr</label>
+            <label>Life Insurance Rate — <span id="lifeDisplay">0.20</span>%/yr <span class="tip-wrap"><span class="tip-icon" tabindex="0" onclick="toggleTip(this)">?</span><span class="tip-bubble">Schuldsaldoverzekering (SSV): covers your outstanding loan balance if you pass away during the mortgage term. Belgian banks nearly always require it. Rate depends on age and health — typically 0.10–0.40%/yr. A 2% Belgian insurance premium tax (IPT) is added on top.</span></span></label>
             <div class="slider-wrap">
               <input type="range" id="lifeRate" min="0.05" max="0.60" step="0.05" value="0.20"
                 oninput="document.getElementById('lifeDisplay').textContent=parseFloat(this.value).toFixed(2);
@@ -1425,6 +1479,15 @@ HTML = """
             </div>
           </div>
 
+          <div class="field">
+            <label>Existing Monthly Debt Payments <span class="tip-wrap"><span class="tip-icon" tabindex="0" onclick="toggleTip(this)">?</span><span class="tip-bubble">Include car loans, personal loans, credit card minimums, or other fixed monthly obligations. Belgian banks assess your total debt-to-income ratio — existing debt reduces the mortgage budget available to you.</span></span></label>
+            <div class="input-wrap">
+              <input type="number" id="existingDebt" value="0" min="0" step="50"
+                oninput="renderAffordabilityEstimator();"/>
+              <span class="unit">€</span>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -1500,6 +1563,55 @@ function fmt(n) {
 function fmtDiff(n) {
   const sign = n >= 0 ? '+' : '';
   return sign + Math.round(n).toLocaleString('nl-BE');
+}
+
+// ─── TOOLTIP HELPERS ─────────────────────────────────────────────────────────
+function tip(text) {
+  return `<span class="tip-wrap"><span class="tip-icon" tabindex="0" onclick="toggleTip(this)">?</span><span class="tip-bubble">${text}</span></span>`;
+}
+
+function toggleTip(el) {
+  const bubble = el.nextElementSibling;
+  document.querySelectorAll('.tip-bubble.visible').forEach(b => { if (b !== bubble) b.classList.remove('visible'); });
+  bubble.classList.toggle('visible');
+  if (bubble.classList.contains('visible')) {
+    setTimeout(() => document.addEventListener('click', function h(e) {
+      if (!e.target.closest('.tip-wrap')) { bubble.classList.remove('visible'); document.removeEventListener('click', h); }
+    }), 0);
+  }
+}
+
+// ─── SENSITIVITY MATRIX ───────────────────────────────────────────────────────
+function calcPayment(loan, ratePercent, termYears) {
+  const mr = Math.pow(1 + ratePercent / 100, 1 / 12) - 1;
+  const n = termYears * 12;
+  if (mr <= 0) return loan / n;
+  return loan * (mr * Math.pow(1 + mr, n)) / (Math.pow(1 + mr, n) - 1);
+}
+
+function buildSensitivityMatrix(loan, currentRatePct, currentTerm) {
+  const terms = [10, 15, 20, 25, 30];
+  const base = Math.round(currentRatePct * 2) / 2;
+  const rates = [];
+  for (let r = Math.max(0.5, base - 2); r <= base + 2.01; r += 0.5) {
+    rates.push(parseFloat(r.toFixed(1)));
+  }
+  let html = '<div class="sensitivity-wrap"><table class="sensitivity-table"><thead><tr>';
+  html += '<th>Rate</th>' + terms.map(t => `<th>${t}y</th>`).join('') + '</tr></thead><tbody>';
+  for (const rate of rates) {
+    html += '<tr>';
+    const isCurrentRate = Math.abs(rate - currentRatePct) < 0.001;
+    html += `<td class="rate-label${isCurrentRate ? ' current-rate' : ''}">${rate.toFixed(1)}%</td>`;
+    for (const term of terms) {
+      const payment = calcPayment(loan, rate, term);
+      const isActive = isCurrentRate && term === currentTerm;
+      html += `<td class="${isActive ? 'cell-active' : ''}">${fmt(payment)}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+  html += `<div class="sensitivity-note">Loan: ${fmt(loan)} &nbsp;·&nbsp; Highlighted cell = current selection &nbsp;·&nbsp; Monthly payment only</div>`;
+  return html;
 }
 
 // ─── TABS ─────────────────────────────────────────────────────────────────────
@@ -1852,19 +1964,19 @@ function renderResults(d, dB, targetId = 'results-main') {
           <span class="costs-section">Upfront Costs</span>
 
           <li>
-            <span class="cost-label">${bc.is_new_build ? 'VAT 21% (new build / VEFA)' : 'Registration fees (' + bc.reg_rate + '%)'}</span>
+            <span class="cost-label">${bc.is_new_build ? 'VAT 21% (new build / VEFA)' : 'Registration fees (' + bc.reg_rate + '%)'}${tip(bc.is_new_build ? 'New builds attract 21% Belgian VAT (BTW/TVA) instead of registration duty. Paid to the developer at completion.' : 'Transfer tax (verkooprecht / droits d\'enregistrement) paid to the Belgian region. Rates differ by region, property type, and primary vs secondary residence.')}</span>
             <span class="cost-val">${fmt(bc.registration)}</span>
           </li>
           ${abatementRow}
-          <li><span class="cost-label">Notary fees (est.)</span><span class="cost-val">${fmt(bc.notary)}</span></li>
-          <li><span class="cost-label">Mortgage deed / hypotheekakte (est.)</span><span class="cost-val">${fmt(bc.deed)}</span></li>
+          <li><span class="cost-label">Notary fees (est.)${tip('Includes the notary\'s statutory professional fee (degressive scale set by law) plus 21% VAT and disbursements such as search fees and admin costs. Estimated here at approx. 1.5× the statutory base fee.')}</span><span class="cost-val">${fmt(bc.notary)}</span></li>
+          <li><span class="cost-label">Mortgage deed / hypotheekakte (est.)${tip('Registering the mortgage with the Belgian Mortgage Registry costs approx. 1.3% of the loan amount: 1% registration tax + 0.3% mortgage duty (hypotheekrecht), both levied on the loan amount.')}</span><span class="cost-val">${fmt(bc.deed)}</span></li>
           <li><span class="cost-label" style="color:var(--text)">Total upfront</span><span class="cost-val accent">${fmt(bc.total)}</span></li>
 
           <span class="costs-section">Ongoing Costs Over ${d.term} Years</span>
 
           <li><span class="cost-label">Total repaid (capital + interest)</span><span class="cost-val">${fmt(d.total_repaid)}</span></li>
           <li>
-            <span class="cost-label">Life ins. (SSV, ${d.life_insurance_rate.toFixed(2)}%/yr + 2% IPT)</span>
+            <span class="cost-label">Life ins. (SSV, ${d.life_insurance_rate.toFixed(2)}%/yr + 2% IPT)${tip('Schuldsaldoverzekering (SSV): pays off the outstanding balance if you die during the mortgage. The 2% IPT (Insurance Premium Tax) is a Belgian federal tax applied to all insurance premiums. Cost shown is estimated over the full term on a declining balance.')}</span>
             <span class="cost-val orange">${fmt(d.total_life_insurance)}</span>
           </li>
           <li>
@@ -1915,6 +2027,14 @@ function renderResults(d, dB, targetId = 'results-main') {
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <!-- SENSITIVITY MATRIX -->
+    <div class="panel animate" style="animation-delay:0.25s">
+      <div class="panel-header">Rate × Term Sensitivity ${tip('Monthly payment for this loan amount at different interest rates and terms. The highlighted cell is your current selection. Useful for quickly seeing how a better rate or shorter term changes your payment.')}</div>
+      <div class="panel-body" style="padding:0">
+        ${buildSensitivityMatrix(d.loan_amount, parseFloat(document.getElementById('rate').value), d.term)}
       </div>
     </div>
   `;
@@ -2151,6 +2271,7 @@ function renderAffordabilityEstimator() {
   const down          = parseFloat(document.getElementById('affordDown').value)     || 0;
   const term          = parseInt(document.getElementById('affordTerm').value)       || 20;
   const rate          = parseFloat(document.getElementById('affordRate').value) / 100;
+  const existingDebt  = parseFloat(document.getElementById('existingDebt').value)  || 0;
 
   if (targetMonthly <= 0 && income <= 0) {
     el.innerHTML = '<div class="info-box" style="color:var(--muted)">Enter your details above to see your price range.</div>';
@@ -2174,6 +2295,19 @@ function renderAffordabilityEstimator() {
   const ltvPct = price > 0 ? (loan / price * 100) : 100;
   const incomeRatioPct = income > 0 ? (budget / income * 100) : null;
 
+  // Total DTI = (mortgage payment + existing debt) / income
+  const totalDTI = income > 0 ? ((budget + existingDebt) / income * 100) : null;
+  const dtiColor = totalDTI === null ? 'var(--text)'
+    : totalDTI <= 33 ? 'var(--green)'
+    : totalDTI <= 43 ? 'var(--orange)'
+    : 'var(--red)';
+
+  // Max affordable mortgage given existing debt and 43% DTI cap
+  const maxTotalDebt43 = income > 0 ? income * 0.43 : null;
+  const maxMortgageBudget = maxTotalDebt43 ? Math.max(0, maxTotalDebt43 - existingDebt) : null;
+  const maxLoanWithDebt = maxMortgageBudget ? maxLoanForBudget(maxMortgageBudget) : null;
+  const maxPriceWithDebt = maxLoanWithDebt !== null ? maxLoanWithDebt + down : null;
+
   // Stress test at rate + 1%
   const stressRate = rate + 0.01;
   const smr = Math.pow(1 + stressRate, 1/12) - 1;
@@ -2190,6 +2324,8 @@ function renderAffordabilityEstimator() {
     : incomeRatioPct <= 33 ? 'var(--green)'
     : incomeRatioPct <= 40 ? 'var(--orange)'
     : 'var(--red)';
+
+  const dtiCardBorder = totalDTI !== null && totalDTI > 43 ? 'border-color:var(--red)' : '';
 
   el.innerHTML = `
     <div style="margin-bottom:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Your Budget Estimate</div>
@@ -2210,13 +2346,34 @@ function renderAffordabilityEstimator() {
         <div class="a-sub">if rate rises 1%, same monthly budget</div>
       </div>
       <div class="afford-card">
-        <div class="a-label">% of Take Home Pay</div>
+        <div class="a-label">Housing Cost Ratio</div>
         <div class="a-val" style="font-size:16px;color:${ratioColor}">${incomeRatioPct !== null ? incomeRatioPct.toFixed(1) + '%' : '—'}</div>
-        <div class="a-sub">banks prefer ≤33–40% of net income</div>
+        <div class="a-sub">mortgage only · banks prefer ≤33–40%</div>
       </div>
     </div>
+
+    <div style="margin-top:14px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Debt-to-Income (DTI) Assessment</div>
+    <div class="afford-grid" style="margin-top:4px;">
+      <div class="afford-card" style="${dtiCardBorder}">
+        <div class="a-label">Total DTI</div>
+        <div class="a-val" style="font-size:16px;color:${dtiColor}">${totalDTI !== null ? totalDTI.toFixed(1) + '%' : '—'}</div>
+        <div class="a-sub">mortgage + existing debt · bank hard limit ≈43%</div>
+      </div>
+      ${existingDebt > 0 && maxPriceWithDebt !== null ? `
+      <div class="afford-card">
+        <div class="a-label">Max Price at 43% DTI</div>
+        <div class="a-val" style="font-size:15px;color:var(--text)">${fmt(maxPriceWithDebt)}</div>
+        <div class="a-sub">after existing debt of ${fmt(existingDebt)}/mo</div>
+      </div>` : `
+      <div class="afford-card">
+        <div class="a-label">Existing Monthly Debt</div>
+        <div class="a-val" style="font-size:15px;color:var(--muted)">${fmt(existingDebt)}</div>
+        <div class="a-sub">add existing obligations in the input above</div>
+      </div>`}
+    </div>
+
     ${price33 || price40 ? `
-    <div style="margin-top:12px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Bank Guidelines (for reference)</div>
+    <div style="margin-top:14px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Bank Guidelines (for reference)</div>
     <div class="afford-grid" style="margin-top:4px;">
       ${price33 ? `<div class="afford-card"><div class="a-label">Conservative (33%)</div><div class="a-val" style="font-size:15px;color:var(--text)">${fmt(price33)}</div><div class="a-sub">${budget33.toFixed(0)}€/mo</div></div>` : ''}
       ${price40 ? `<div class="afford-card"><div class="a-label">Upper bound (40%)</div><div class="a-val" style="font-size:15px;color:var(--text)">${fmt(price40)}</div><div class="a-sub">${budget40.toFixed(0)}€/mo</div></div>` : ''}
