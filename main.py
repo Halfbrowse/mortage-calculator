@@ -1750,7 +1750,7 @@ function renderResults(d, dB, targetId = 'results-main') {
     <div class="panel chart-panel animate" style="animation-delay:0.1s">
       <div class="panel-header">Balance Over Time${dB ? ' — A vs B' : ''}</div>
       <div class="panel-body">
-        <canvas id="myChart"></canvas>
+        <canvas id="myChart-${targetId}"></canvas>
       </div>
     </div>
 
@@ -1862,7 +1862,7 @@ function renderResults(d, dB, targetId = 'results-main') {
     </div>
   `;
 
-  drawChart(d, dB);
+  drawChart(d, dB, targetId);
   updateOverpayment();
 }
 
@@ -1919,9 +1919,9 @@ function renderResultsB(d) {
 }
 
 // ─── CHART ────────────────────────────────────────────────────────────────────
-function drawChart(d, dB) {
+function drawChart(d, dB, targetId = 'results-main') {
   if (chartInstance) chartInstance.destroy();
-  const ctx = document.getElementById('myChart').getContext('2d');
+  const ctx = document.getElementById('myChart-' + targetId).getContext('2d');
 
   const labels = d.annual.map(r => 'Y' + r.year);
   const labelSuffix = dB ? ' A' : '';
