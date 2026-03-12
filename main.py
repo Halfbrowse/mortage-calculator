@@ -1784,11 +1784,11 @@ function renderResults(d, dB, targetId = 'results-main') {
           <span class="costs-section">Upfront Costs</span>
 
           <li>
-            <span class="cost-label">${bc.is_new_build ? 'VAT 21% (new build / VEFA)' : 'Registration fees (' + bc.reg_rate + '%)'}${tip(bc.is_new_build ? 'New builds attract 21% Belgian VAT (BTW/TVA) instead of registration duty. Paid to the developer at completion.' : 'Transfer tax (verkooprecht / droits d\'enregistrement) paid to the Belgian region. Rates differ by region, property type, and primary vs secondary residence.')}</span>
+            <span class="cost-label">${bc.is_new_build ? 'VAT 21% (new build / VEFA)' : 'Registration fees (' + bc.reg_rate + '%)'}${tip(bc.is_new_build ? 'New builds attract 21% Belgian VAT (BTW/TVA) instead of registration duty. Paid to the developer at completion.' : 'Transfer tax (verkooprecht / droits d\\'enregistrement) paid to the Belgian region. Rates differ by region, property type, and primary vs secondary residence.')}</span>
             <span class="cost-val">${fmt(bc.registration)}</span>
           </li>
           ${abatementRow}
-          <li><span class="cost-label">Notary fees (est.)${tip('Includes the notary\'s statutory professional fee (degressive scale set by law) plus 21% VAT and disbursements such as search fees and admin costs. Estimated here at approx. 1.5× the statutory base fee.')}</span><span class="cost-val">${fmt(bc.notary)}</span></li>
+          <li><span class="cost-label">Notary fees (est.)${tip('Includes the notary\\'s statutory professional fee (degressive scale set by law) plus 21% VAT and disbursements such as search fees and admin costs. Estimated here at approx. 1.5× the statutory base fee.')}</span><span class="cost-val">${fmt(bc.notary)}</span></li>
           <li><span class="cost-label">Mortgage deed / hypotheekakte (est.)${tip('Registering the mortgage with the Belgian Mortgage Registry costs approx. 1.3% of the loan amount: 1% registration tax + 0.3% mortgage duty (hypotheekrecht), both levied on the loan amount.')}</span><span class="cost-val">${fmt(bc.deed)}</span></li>
           <li><span class="cost-label" style="color:var(--text)">Total upfront</span><span class="cost-val accent">${fmt(bc.total)}</span></li>
 
