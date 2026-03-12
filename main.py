@@ -1,80 +1,11 @@
 import logging
-import os
-import threading
 
 from flask import Flask, jsonify, render_template_string, request
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ─── Optional scraper / DB imports ───────────────────────────────────────────
-# The app stays fully functional (mortgage calculator) even if these modules
-# or their dependencies (requests, beautifulsoup4, lxml) are missing.
-try:
-    from database import get_properties, get_stats, init_db
-    from scraper import scrape_and_store
-
-    _SCRAPER_AVAILABLE = True
-except Exception as _import_err:
-    logger.warning(
-        "Scraper/DB unavailable — properties feature disabled: %s", _import_err
-    )
-    _SCRAPER_AVAILABLE = False
-
-    def init_db():
-        pass
-
-    def get_properties(**_):
-        return []
-
-    def get_stats():
-        return {"count": 0, "min_price": 0, "max_price": 0}
-
-    def scrape_and_store(**_):
-        return 0
-
-
 app = Flask(__name__)
-
-# Initialise database on startup
-init_db()
-
-_scrape_lock = threading.Lock()
-
-# ─── AUTO-SCRAPE SCHEDULER ───────────────────────────────────────────────────
-_SCRAPE_INTERVAL_HOURS = int(os.environ.get("SCRAPE_INTERVAL_HOURS", 24))
-_SCRAPE_PAGES = min(int(os.environ.get("SCRAPE_PAGES", 2)), 5)  # hard cap at 5 pages
-
-
-def _background_scraper():
-    """Daemon thread: scrape on startup (after brief delay), then every N hours."""
-    import time as _time
-
-    _time.sleep(5)
-    while True:
-        if _scrape_lock.acquire(blocking=False):
-            try:
-                stats_before = get_stats()
-                logger.info(
-                    "Auto-scrape starting (interval=%dh, pages=%d) — DB has %d properties",
-                    _SCRAPE_INTERVAL_HOURS,
-                    _SCRAPE_PAGES,
-                    stats_before["count"],
-                )
-                stored = scrape_and_store(pages=_SCRAPE_PAGES)
-                logger.info("Auto-scrape done — stored %d properties", stored)
-            except Exception as exc:
-                logger.error("Auto-scrape error: %s", exc)
-            finally:
-                _scrape_lock.release()
-        else:
-            logger.info("Auto-scrape skipped — manual scrape already running.")
-        _time.sleep(_SCRAPE_INTERVAL_HOURS * 3600)
-
-
-if _SCRAPER_AVAILABLE:
-    _scraper_thread = threading.Thread(target=_background_scraper, daemon=True)
-    _scraper_thread.start()
 
 
 def belgian_buying_costs(
@@ -963,106 +894,6 @@ HTML = """
     }
     .toast.visible { transform: translateX(-50%) translateY(0); }
 
-    /* ── PROPERTIES ─────────────────────────────────────────────────────── */
-    #prop-section {
-      display: none;
-      max-width: 1280px;
-      margin: 0 auto;
-      padding: 0 40px 48px;
-    }
-    #prop-section.visible { display: block; }
-    @media (max-width: 960px) { #prop-section { padding: 0 20px 32px; } }
-    @media (max-width: 480px) { #prop-section { padding: 0 16px 24px; } }
-
-    .prop-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 20px;
-      margin-top: 24px;
-    }
-    .prop-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      overflow: hidden;
-      transition: border-color 0.2s, transform 0.2s;
-      display: flex;
-      flex-direction: column;
-    }
-    .prop-card:hover { border-color: var(--gold); transform: translateY(-2px); }
-    .prop-card a { text-decoration: none; color: inherit; display: flex; flex-direction: column; flex: 1; }
-    .prop-img {
-      width: 100%;
-      aspect-ratio: 16/9;
-      object-fit: cover;
-      background: var(--surface);
-      display: block;
-    }
-    .prop-img-placeholder {
-      width: 100%;
-      aspect-ratio: 16/9;
-      background: var(--surface);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 36px;
-      color: var(--border);
-    }
-    .prop-body { padding: 16px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
-    .prop-price {
-      font-family: 'Playfair Display', serif;
-      font-size: 22px;
-      font-weight: 700;
-      color: var(--gold);
-    }
-    .prop-title { font-size: 13px; color: var(--text); line-height: 1.4; }
-    .prop-loc { font-size: 11px; color: var(--muted); }
-    .prop-meta {
-      display: flex;
-      gap: 12px;
-      font-size: 11px;
-      color: var(--muted);
-      margin-top: auto;
-      padding-top: 8px;
-      border-top: 1px solid var(--border);
-    }
-    .prop-meta span { display: flex; align-items: center; gap: 4px; }
-
-    .prop-toolbar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 4px;
-    }
-    .prop-status {
-      font-size: 11px;
-      color: var(--muted);
-      letter-spacing: 0.08em;
-    }
-    .prop-status .count { color: var(--gold); font-weight: 500; }
-    .scrape-btn {
-      background: transparent;
-      border: 1px solid var(--gold);
-      color: var(--gold);
-      padding: 8px 16px;
-      border-radius: 8px;
-      font-family: 'DM Mono', monospace;
-      font-size: 11px;
-      letter-spacing: 0.1em;
-      cursor: pointer;
-      text-transform: uppercase;
-      transition: background 0.2s, color 0.2s;
-    }
-    .scrape-btn:hover { background: var(--gold-dim); }
-    .scrape-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .prop-empty {
-      text-align: center;
-      padding: 60px 20px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-    .prop-empty-icon { font-size: 48px; opacity: 0.3; display: block; margin-bottom: 12px; }
 
     /* KO-FI BUTTON */
     .kofi-btn {
@@ -1579,26 +1410,6 @@ HTML = """
   </div>
 </div>
 
-<!-- PROPERTIES FULL-WIDTH SECTION -->
-<section id="prop-section">
-  <div class="panel" style="border-radius:14px;">
-    <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-      <span>Matching Listings</span>
-      <div class="prop-toolbar">
-        <span class="prop-status" id="propCount"></span>
-        <button class="scrape-btn" id="scrapeBtn" onclick="triggerScrape()">Refresh Listings</button>
-      </div>
-    </div>
-    <div class="panel-body">
-      <div id="propResults">
-        <div class="prop-empty">
-          <span class="prop-empty-icon">🏠</span>
-          Simulate a mortgage above to see matching listings.
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
 
 <div class="disclaimer">
   <div class="disclaimer-inner">
@@ -1727,96 +1538,8 @@ function switchTab(name) {
   document.getElementById('results-' + name).style.display = '';
 
   // Properties section only for Loan tab
-  document.getElementById('prop-section').classList.toggle('visible', name === 'main');
-
   if (name === 'afford') { renderAffordabilityEstimator(); }
   if (name === 'refi') { calcRefi(); }
-}
-
-// ─── PROPERTIES ──────────────────────────────────────────────────────────────
-function searchProperties() {
-  const simPrice = parseFloat(document.getElementById('price').value) || 0;
-  const container = document.getElementById('propResults');
-  const countEl   = document.getElementById('propCount');
-
-  if (simPrice <= 0) return;
-
-  const minPrice = Math.round(simPrice * 0.85);
-  const maxPrice = Math.round(simPrice * 1.15);
-
-  container.innerHTML = '<div class="prop-empty"><span class="prop-empty-icon" style="font-size:32px;opacity:.5;">⏳</span>Loading…</div>';
-
-  const params = new URLSearchParams({ limit: 48, min_price: minPrice, max_price: maxPrice });
-
-  fetch('/api/properties?' + params.toString())
-    .then(r => r.json())
-    .then(data => {
-      const props = data.properties || [];
-      countEl.innerHTML = props.length > 0
-        ? `<span class="count">${props.length}</span> listings near ${fmt(simPrice)}`
-        : '';
-      if (props.length === 0) {
-        container.innerHTML = `<div class="prop-empty"><span class="prop-empty-icon">🔍</span>No listings found near ${fmt(simPrice)}.<br/>Click <em>Refresh Listings</em> to fetch the latest data from Immoweb.</div>`;
-        return;
-      }
-      container.innerHTML = '<div class="prop-grid">' + props.map(renderCard).join('') + '</div>';
-    })
-    .catch(() => {
-      container.innerHTML = '<div class="prop-empty">Error loading properties. Please try again.</div>';
-    });
-}
-
-function renderCard(p) {
-  const price = '€' + p.price.toLocaleString('nl-BE');
-  const img = p.image_url
-    ? `<img class="prop-img" src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
-       <div class="prop-img-placeholder" style="display:none;">🏠</div>`
-    : `<div class="prop-img-placeholder">🏠</div>`;
-  const beds = p.bedrooms ? `<span>🛏 ${p.bedrooms}</span>` : '';
-  const area = p.area    ? `<span>📐 ${p.area} m²</span>` : '';
-  const type = p.prop_type ? `<span>🏷 ${p.prop_type.toLowerCase()}</span>` : '';
-  return `
-    <div class="prop-card animate">
-      <a href="${esc(p.url)}" target="_blank" rel="noopener">
-        ${img}
-        <div class="prop-body">
-          <div class="prop-price">${price}</div>
-          <div class="prop-title">${esc(p.title || '—')}</div>
-          <div class="prop-loc">${esc(p.location || '')}</div>
-          ${ (beds || area || type) ? `<div class="prop-meta">${beds}${area}${type}</div>` : '' }
-        </div>
-      </a>
-    </div>`;
-}
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function triggerScrape() {
-  const btn = document.getElementById('scrapeBtn');
-  const simPrice = parseFloat(document.getElementById('price').value) || 0;
-  const minPrice = simPrice > 0 ? Math.round(simPrice * 0.85) : null;
-  const maxPrice = simPrice > 0 ? Math.round(simPrice * 1.15) : null;
-
-  btn.disabled = true;
-  btn.textContent = 'Scraping…';
-
-  fetch('/api/scrape', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ min_price: minPrice, max_price: maxPrice, pages: 5 }),
-  })
-    .then(r => r.json())
-    .then(() => {
-      btn.disabled = false;
-      btn.textContent = 'Refresh Listings';
-      searchProperties();
-    })
-    .catch(() => {
-      btn.disabled = false;
-      btn.textContent = 'Refresh Listings';
-    });
 }
 
 // ─── VALIDATION ───────────────────────────────────────────────────────────────
@@ -1955,8 +1678,6 @@ function calculate() {
       lastDataA = data;
       saveToURL(paramsA, null);
       renderResults(lastDataA, null);
-      document.getElementById('prop-section').classList.add('visible');
-      searchProperties();
     });
 }
 
@@ -2845,65 +2566,6 @@ def calculate_route():
     if result is None:
         return jsonify({"error": "Invalid parameters"}), 400
     return jsonify(result)
-
-
-@app.route("/api/properties")
-def api_properties():
-    try:
-        min_price = request.args.get("min_price", type=int)
-        max_price = request.args.get("max_price", type=int)
-        prop_type = request.args.get("prop_type")
-        limit = min(int(request.args.get("limit", 48)), 100)
-        offset = int(request.args.get("offset", 0))
-        props = get_properties(
-            min_price=min_price,
-            max_price=max_price,
-            prop_type=prop_type,
-            limit=limit,
-            offset=offset,
-        )
-        return jsonify({"properties": props, "count": len(props)})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-
-
-@app.route("/api/scrape", methods=["POST"])
-def api_scrape():
-    if not _scrape_lock.acquire(blocking=False):
-        return jsonify({"message": "Scrape already in progress — please wait."}), 409
-
-    data = request.get_json(silent=True) or {}
-    pages = max(1, min(int(data.get("pages", 5)), 20))
-    min_price = data.get("min_price")
-    max_price = data.get("max_price")
-
-    def _run():
-        try:
-            stored = scrape_and_store(
-                pages=pages, min_price=min_price, max_price=max_price
-            )
-            app.logger.info("Scrape complete: %d properties stored", stored)
-        finally:
-            _scrape_lock.release()
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    t.join(timeout=90)  # wait up to 90 s so caller gets a result
-
-    if t.is_alive():
-        return jsonify({"message": "Scrape is still running in the background."})
-    stats = get_stats()
-    return jsonify(
-        {
-            "message": f"Scrape complete — {stats['count']} properties in database.",
-            "stats": stats,
-        }
-    )
-
-
-@app.route("/api/db-stats")
-def api_db_stats():
-    return jsonify(get_stats())
 
 
 if __name__ == "__main__":
