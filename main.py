@@ -82,9 +82,24 @@ def compute_schedule(
     fire_insurance_annual,
 ):
     """Core mortgage calculation. Returns result dict or None on invalid input."""
-    loan = price - down
-    if loan <= 0 or price <= 0 or term_years <= 0:
+    if price <= 0 or term_years <= 0 or down < 0:
         return None
+
+    # First pass: estimate purchasing costs using the preliminary loan
+    prelim_loan = price - down
+    if prelim_loan <= 0:
+        return None
+    prelim_costs = belgian_buying_costs(
+        price, prelim_loan, region, primary_residence, is_new_build
+    )
+
+    # Net down payment: what remains from the user's available funds after paying costs
+    net_down = down - prelim_costs["total"]
+    if net_down <= 0:
+        return None
+
+    # Actual loan = price minus what the user can actually put toward the property
+    loan = price - net_down
 
     ltv_pct = loan / price * 100
     monthly_rate = (1 + rate) ** (1 / 12) - 1 if rate > 0 else 0
@@ -177,10 +192,11 @@ def compute_schedule(
     buying_costs = belgian_buying_costs(
         price, loan, region, primary_residence, is_new_build
     )
+    # grand_total: down already covers purchasing costs + net_down toward the house,
+    # so we do not add buying_costs["total"] separately here.
     grand_total = (
         down
         + total_repaid
-        + buying_costs["total"]
         + total_life_insurance
         + total_fire_insurance
     )
@@ -189,6 +205,7 @@ def compute_schedule(
         "loan_amount": loan,
         "price": price,
         "down": down,
+        "net_down": round(net_down),
         "term": term_years,
         "loan_type": loan_type,
         "monthly_display": monthly_display,
@@ -1025,7 +1042,7 @@ HTML = """
           </div>
 
           <div class="field">
-            <label>Down Payment</label>
+            <label>Available Funds (incl. purchasing costs)</label>
             <div class="input-wrap">
               <input type="number" id="down" value="70000" min="0" step="1000"
                 oninput="onNumberInput(this); debouncedCalc()"/>
@@ -1143,7 +1160,7 @@ HTML = """
           </div>
 
           <div class="field">
-            <label>Down Payment B</label>
+            <label>Available Funds B (incl. purchasing costs)</label>
             <div class="input-wrap">
               <input type="number" id="downB" value="70000" min="0" step="1000"
                 oninput="onNumberInput(this); debouncedCalc()"/>
@@ -1778,7 +1795,7 @@ function renderResults(d, dB, targetId = 'results-main') {
       <div class="panel-body">
         <ul class="costs-list">
           <li><span class="cost-label">Property price</span><span class="cost-val">${fmt(d.price)}</span></li>
-          <li><span class="cost-label">Down payment</span><span class="cost-val">${fmt(d.down)}</span></li>
+          <li><span class="cost-label">Available funds (total cash)</span><span class="cost-val">${fmt(d.down)}</span></li>
           <li><span class="cost-label">Loan amount</span><span class="cost-val">${fmt(d.loan_amount)}</span></li>
 
           <span class="costs-section">Upfront Costs</span>
@@ -1791,6 +1808,10 @@ function renderResults(d, dB, targetId = 'results-main') {
           <li><span class="cost-label">Notary fees (est.)${tip('Includes the notary\\'s statutory professional fee (degressive scale set by law) plus 21% VAT and disbursements such as search fees and admin costs. Estimated here at approx. 1.5× the statutory base fee.')}</span><span class="cost-val">${fmt(bc.notary)}</span></li>
           <li><span class="cost-label">Mortgage deed / hypotheekakte (est.)${tip('Registering the mortgage with the Belgian Mortgage Registry costs approx. 1.3% of the loan amount: 1% registration tax + 0.3% mortgage duty (hypotheekrecht), both levied on the loan amount.')}</span><span class="cost-val">${fmt(bc.deed)}</span></li>
           <li><span class="cost-label" style="color:var(--text)">Total upfront</span><span class="cost-val accent">${fmt(bc.total)}</span></li>
+          <li style="margin-top:6px;padding:8px 0 8px 0;border-top:1px solid var(--border)">
+            <span class="cost-label" style="color:var(--text);font-weight:600">After purchasing costs, available toward property</span>
+            <span class="cost-val saving" style="font-weight:700">${fmt(d.net_down)}</span>
+          </li>
 
           <span class="costs-section">Ongoing Costs Over ${d.term} Years</span>
 
