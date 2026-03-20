@@ -37,25 +37,37 @@ def belgian_buying_costs(
                 taxable = max(0, price - 200_000)
         registration = taxable * reg_rate_dec
 
+    # Notary honorarium — Royal Decree degressive scale (KB 16 Dec 1950, confirmed 2025).
+    # Top bracket confirmed at 0.057% by DLA Piper REALWORLD & Notaris.be (range 0.057%–4.56%).
     if price <= 7_500:
-        notary = price * 0.0456
+        notary_bare = price * 0.0456
     elif price <= 17_500:
-        notary = 342 + (price - 7_500) * 0.0285
+        notary_bare = 342 + (price - 7_500) * 0.0285
     elif price <= 30_000:
-        notary = 627 + (price - 17_500) * 0.0228
+        notary_bare = 627 + (price - 17_500) * 0.0228
     elif price <= 45_495:
-        notary = 912 + (price - 30_000) * 0.0171
+        notary_bare = 912 + (price - 30_000) * 0.0171
     elif price <= 64_095:
-        notary = 1_177 + (price - 45_495) * 0.0114
+        notary_bare = 1_177 + (price - 45_495) * 0.0114
     elif price <= 250_095:
-        notary = 1_389 + (price - 64_095) * 0.0057
+        notary_bare = 1_389 + (price - 64_095) * 0.0057
     else:
-        notary = 2_449 + (price - 250_095) * 0.0057
-    notary = max(notary, 500)
-    notary *= 1.5  # VAT on notary fees + disbursements
+        notary_bare = 2_449 + (price - 250_095) * 0.00057  # 0.057% top bracket
+    notary_bare = max(notary_bare, 500)
+    # 21% VAT on honorarium + €813 fixed administrative costs (notaris.be, 23/02/2024)
+    notary = notary_bare * 1.21 + 813
 
-    # Mortgage deed: 1% registration fee + 0.3% mortgage duty (both levied on loan amount)
-    deed = loan * 0.013
+    # Mortgage deed costs (only when there is an actual loan):
+    #   - Registration duty + mortgage duty: 1.3% on the *secured* amount
+    #     (loan capital + 10% accessories, standard Belgian practice)
+    #   - Fixed mortgage registrar fee paid to the state: €230 (<€300k) / €985 (≥€300k)
+    #   Source: notaris.be kredietkosten, confirmed by multiple 2025 Belgian sources.
+    if loan > 0:
+        secured = loan * 1.10
+        registrar_fee = 230 if loan < 300_000 else 985
+        deed = secured * 0.013 + registrar_fee
+    else:
+        deed = 0
     total = registration + notary + deed
 
     return {
@@ -87,18 +99,28 @@ def compute_schedule(
 
     # Derive exact net_down analytically, accounting for all regional taxes.
     #
-    # Registration fees and notary fees depend only on price/region/type — not on
-    # the loan — so we get them by passing loan=0 (deed contribution is zero).
-    # Mortgage deed is always 1.3% of the actual loan, which itself depends on
-    # net_down: loan = price - net_down.
+    # Registration and notary fees depend only on price/region/type, not the loan.
+    # We get them via belgian_buying_costs(loan=0), which returns deed=0.
     #
-    # Solving the circular dependency:
-    #   net_down = down - c_fixed - deed
-    #   deed     = 0.013 * loan = 0.013 * (price - net_down)
-    # → net_down = (down - c_fixed - 0.013 * price) / (1 - 0.013)
+    # Deed taxes are linear in loan: (loan × 1.10) × 0.013 = loan × DEED_RATE.
+    # The mortgage registrar fixed fee (€230/€985) is treated as approximately
+    # fixed (based on the preliminary loan price − down); the error from this
+    # approximation is negligible (≤€755 difference on a €300k threshold).
+    #
+    # Circular dependency resolved analytically:
+    #   net_down = down − c_fixed − registrar_fee − DEED_RATE × loan
+    #            = down − c_fixed − registrar_fee − DEED_RATE × (price − net_down)
+    # → net_down = (down − c_fixed − registrar_fee − DEED_RATE × price) / (1 − DEED_RATE)
+    DEED_RATE = 0.013 * 1.10  # 1.3% on secured amount (loan + 10% accessories)
     fixed_only = belgian_buying_costs(price, 0, region, primary_residence, is_new_build)
-    c_fixed = fixed_only["registration"] + fixed_only["notary"]
-    net_down = (down - c_fixed - 0.013 * price) / (1 - 0.013)
+    c_fixed = fixed_only["total"]  # registration + notary (deed=0 when loan=0)
+    # Estimate registrar fee from preliminary loan; correct once if the actual loan
+    # lands on the other side of the €300k threshold (avoids ±€755 error).
+    prelim_loan = price - down
+    for _ in range(2):
+        registrar_fee = 230 if prelim_loan < 300_000 else 985
+        net_down = (down - c_fixed - registrar_fee - DEED_RATE * price) / (1 - DEED_RATE)
+        prelim_loan = price - net_down  # refined estimate for next iteration
 
     if net_down <= 0:
         return None
