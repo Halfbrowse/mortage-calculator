@@ -85,21 +85,28 @@ def compute_schedule(
     if price <= 0 or term_years <= 0 or down < 0:
         return None
 
-    # First pass: estimate purchasing costs using the preliminary loan
-    prelim_loan = price - down
-    if prelim_loan <= 0:
-        return None
-    prelim_costs = belgian_buying_costs(
-        price, prelim_loan, region, primary_residence, is_new_build
-    )
+    # Derive exact net_down analytically, accounting for all regional taxes.
+    #
+    # Registration fees and notary fees depend only on price/region/type — not on
+    # the loan — so we get them by passing loan=0 (deed contribution is zero).
+    # Mortgage deed is always 1.3% of the actual loan, which itself depends on
+    # net_down: loan = price - net_down.
+    #
+    # Solving the circular dependency:
+    #   net_down = down - c_fixed - deed
+    #   deed     = 0.013 * loan = 0.013 * (price - net_down)
+    # → net_down = (down - c_fixed - 0.013 * price) / (1 - 0.013)
+    fixed_only = belgian_buying_costs(price, 0, region, primary_residence, is_new_build)
+    c_fixed = fixed_only["registration"] + fixed_only["notary"]
+    net_down = (down - c_fixed - 0.013 * price) / (1 - 0.013)
 
-    # Net down payment: what remains from the user's available funds after paying costs
-    net_down = down - prelim_costs["total"]
     if net_down <= 0:
         return None
 
-    # Actual loan = price minus what the user can actually put toward the property
+    # Actual loan = price minus what the user can put toward the property
     loan = price - net_down
+    if loan <= 0:
+        return None
 
     ltv_pct = loan / price * 100
     monthly_rate = (1 + rate) ** (1 / 12) - 1 if rate > 0 else 0
