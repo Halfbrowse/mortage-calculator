@@ -37,25 +37,37 @@ def belgian_buying_costs(
                 taxable = max(0, price - 200_000)
         registration = taxable * reg_rate_dec
 
+    # Notary honorarium — Royal Decree degressive scale (KB 16 Dec 1950, confirmed 2025).
+    # Top bracket confirmed at 0.057% by DLA Piper REALWORLD & Notaris.be (range 0.057%–4.56%).
     if price <= 7_500:
-        notary = price * 0.0456
+        notary_bare = price * 0.0456
     elif price <= 17_500:
-        notary = 342 + (price - 7_500) * 0.0285
+        notary_bare = 342 + (price - 7_500) * 0.0285
     elif price <= 30_000:
-        notary = 627 + (price - 17_500) * 0.0228
+        notary_bare = 627 + (price - 17_500) * 0.0228
     elif price <= 45_495:
-        notary = 912 + (price - 30_000) * 0.0171
+        notary_bare = 912 + (price - 30_000) * 0.0171
     elif price <= 64_095:
-        notary = 1_177 + (price - 45_495) * 0.0114
+        notary_bare = 1_177 + (price - 45_495) * 0.0114
     elif price <= 250_095:
-        notary = 1_389 + (price - 64_095) * 0.0057
+        notary_bare = 1_389 + (price - 64_095) * 0.0057
     else:
-        notary = 2_449 + (price - 250_095) * 0.0057
-    notary = max(notary, 500)
-    notary *= 1.5  # VAT on notary fees + disbursements
+        notary_bare = 2_449 + (price - 250_095) * 0.00057  # 0.057% top bracket
+    notary_bare = max(notary_bare, 500)
+    # 21% VAT on honorarium + €813 fixed administrative costs (notaris.be, 23/02/2024)
+    notary = notary_bare * 1.21 + 813
 
-    # Mortgage deed: 1% registration fee + 0.3% mortgage duty (both levied on loan amount)
-    deed = loan * 0.013
+    # Mortgage deed costs (only when there is an actual loan):
+    #   - Registration duty + mortgage duty: 1.3% on the *secured* amount
+    #     (loan capital + 10% accessories, standard Belgian practice)
+    #   - Fixed mortgage registrar fee paid to the state: €230 (<€300k) / €985 (≥€300k)
+    #   Source: notaris.be kredietkosten, confirmed by multiple 2025 Belgian sources.
+    if loan > 0:
+        secured = loan * 1.10
+        registrar_fee = 230 if loan < 300_000 else 985
+        deed = secured * 0.013 + registrar_fee
+    else:
+        deed = 0
     total = registration + notary + deed
 
     return {
@@ -82,8 +94,40 @@ def compute_schedule(
     fire_insurance_annual,
 ):
     """Core mortgage calculation. Returns result dict or None on invalid input."""
-    loan = price - down
-    if loan <= 0 or price <= 0 or term_years <= 0:
+    if price <= 0 or term_years <= 0 or down < 0:
+        return None
+
+    # Derive exact net_down analytically, accounting for all regional taxes.
+    #
+    # Registration and notary fees depend only on price/region/type, not the loan.
+    # We get them via belgian_buying_costs(loan=0), which returns deed=0.
+    #
+    # Deed taxes are linear in loan: (loan × 1.10) × 0.013 = loan × DEED_RATE.
+    # The mortgage registrar fixed fee (€230/€985) is treated as approximately
+    # fixed (based on the preliminary loan price − down); the error from this
+    # approximation is negligible (≤€755 difference on a €300k threshold).
+    #
+    # Circular dependency resolved analytically:
+    #   net_down = down − c_fixed − registrar_fee − DEED_RATE × loan
+    #            = down − c_fixed − registrar_fee − DEED_RATE × (price − net_down)
+    # → net_down = (down − c_fixed − registrar_fee − DEED_RATE × price) / (1 − DEED_RATE)
+    DEED_RATE = 0.013 * 1.10  # 1.3% on secured amount (loan + 10% accessories)
+    fixed_only = belgian_buying_costs(price, 0, region, primary_residence, is_new_build)
+    c_fixed = fixed_only["total"]  # registration + notary (deed=0 when loan=0)
+    # Estimate registrar fee from preliminary loan; correct once if the actual loan
+    # lands on the other side of the €300k threshold (avoids ±€755 error).
+    prelim_loan = price - down
+    for _ in range(2):
+        registrar_fee = 230 if prelim_loan < 300_000 else 985
+        net_down = (down - c_fixed - registrar_fee - DEED_RATE * price) / (1 - DEED_RATE)
+        prelim_loan = price - net_down  # refined estimate for next iteration
+
+    if net_down <= 0:
+        return None
+
+    # Actual loan = price minus what the user can put toward the property
+    loan = price - net_down
+    if loan <= 0:
         return None
 
     ltv_pct = loan / price * 100
@@ -177,10 +221,11 @@ def compute_schedule(
     buying_costs = belgian_buying_costs(
         price, loan, region, primary_residence, is_new_build
     )
+    # grand_total: down already covers purchasing costs + net_down toward the house,
+    # so we do not add buying_costs["total"] separately here.
     grand_total = (
         down
         + total_repaid
-        + buying_costs["total"]
         + total_life_insurance
         + total_fire_insurance
     )
@@ -189,6 +234,7 @@ def compute_schedule(
         "loan_amount": loan,
         "price": price,
         "down": down,
+        "net_down": round(net_down),
         "term": term_years,
         "loan_type": loan_type,
         "monthly_display": monthly_display,
@@ -1025,7 +1071,7 @@ HTML = """
           </div>
 
           <div class="field">
-            <label>Down Payment</label>
+            <label>Available Funds (incl. purchasing costs)</label>
             <div class="input-wrap">
               <input type="number" id="down" value="70000" min="0" step="1000"
                 oninput="onNumberInput(this); debouncedCalc()"/>
@@ -1143,7 +1189,7 @@ HTML = """
           </div>
 
           <div class="field">
-            <label>Down Payment B</label>
+            <label>Available Funds B (incl. purchasing costs)</label>
             <div class="input-wrap">
               <input type="number" id="downB" value="70000" min="0" step="1000"
                 oninput="onNumberInput(this); debouncedCalc()"/>
@@ -1778,7 +1824,7 @@ function renderResults(d, dB, targetId = 'results-main') {
       <div class="panel-body">
         <ul class="costs-list">
           <li><span class="cost-label">Property price</span><span class="cost-val">${fmt(d.price)}</span></li>
-          <li><span class="cost-label">Down payment</span><span class="cost-val">${fmt(d.down)}</span></li>
+          <li><span class="cost-label">Available funds (total cash)</span><span class="cost-val">${fmt(d.down)}</span></li>
           <li><span class="cost-label">Loan amount</span><span class="cost-val">${fmt(d.loan_amount)}</span></li>
 
           <span class="costs-section">Upfront Costs</span>
@@ -1791,6 +1837,10 @@ function renderResults(d, dB, targetId = 'results-main') {
           <li><span class="cost-label">Notary fees (est.)${tip('Includes the notary\\'s statutory professional fee (degressive scale set by law) plus 21% VAT and disbursements such as search fees and admin costs. Estimated here at approx. 1.5× the statutory base fee.')}</span><span class="cost-val">${fmt(bc.notary)}</span></li>
           <li><span class="cost-label">Mortgage deed / hypotheekakte (est.)${tip('Registering the mortgage with the Belgian Mortgage Registry costs approx. 1.3% of the loan amount: 1% registration tax + 0.3% mortgage duty (hypotheekrecht), both levied on the loan amount.')}</span><span class="cost-val">${fmt(bc.deed)}</span></li>
           <li><span class="cost-label" style="color:var(--text)">Total upfront</span><span class="cost-val accent">${fmt(bc.total)}</span></li>
+          <li style="margin-top:6px;padding:8px 0 8px 0;border-top:1px solid var(--border)">
+            <span class="cost-label" style="color:var(--text);font-weight:600">After purchasing costs, available toward property</span>
+            <span class="cost-val saving" style="font-weight:700">${fmt(d.net_down)}</span>
+          </li>
 
           <span class="costs-section">Ongoing Costs Over ${d.term} Years</span>
 
