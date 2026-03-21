@@ -1127,12 +1127,12 @@ HTML = """
             <label>Property Type</label>
             <div class="radio-group">
               <div class="radio-btn">
-                <input type="radio" name="build" id="existing" value="existing" checked onchange="debouncedCalc()"/>
-                <label for="existing">Existing<br/><small style="color:inherit;opacity:.6">Registration duty</small></label>
+                <input type="radio" name="build" id="existing" value="existing" checked/>
+                <label for="existing" onclick="debouncedCalc()">Existing<br/><small style="color:inherit;opacity:.6">Registration duty</small></label>
               </div>
               <div class="radio-btn">
-                <input type="radio" name="build" id="newbuild" value="new" onchange="debouncedCalc()"/>
-                <label for="newbuild">New build<br/><small style="color:inherit;opacity:.6">21% VAT</small></label>
+                <input type="radio" name="build" id="newbuild" value="new"/>
+                <label for="newbuild" onclick="debouncedCalc()">New build<br/><small style="color:inherit;opacity:.6">21% VAT</small></label>
               </div>
             </div>
           </div>
@@ -1141,12 +1141,12 @@ HTML = """
             <label>Residence Use</label>
             <div class="radio-group">
               <div class="radio-btn">
-                <input type="radio" name="residence" id="primary" value="primary" checked onchange="debouncedCalc()"/>
-                <label for="primary">Primary<br/><small style="color:inherit;opacity:.6">Abatements apply</small></label>
+                <input type="radio" name="residence" id="primary" value="primary" checked/>
+                <label for="primary" onclick="debouncedCalc()">Primary<br/><small style="color:inherit;opacity:.6">Abatements apply</small></label>
               </div>
               <div class="radio-btn">
-                <input type="radio" name="residence" id="secondary" value="secondary" onchange="debouncedCalc()"/>
-                <label for="secondary">Secondary / invest.<br/><small style="color:inherit;opacity:.6">No abatements</small></label>
+                <input type="radio" name="residence" id="secondary" value="secondary"/>
+                <label for="secondary" onclick="debouncedCalc()">Secondary / invest.<br/><small style="color:inherit;opacity:.6">No abatements</small></label>
               </div>
             </div>
           </div>
@@ -1245,12 +1245,12 @@ HTML = """
             <label>Property Type B</label>
             <div class="radio-group">
               <div class="radio-btn">
-                <input type="radio" name="buildB" id="existingB" value="existing" checked onchange="debouncedCalc()"/>
-                <label for="existingB">Existing<br/><small style="color:inherit;opacity:.6">Registration duty</small></label>
+                <input type="radio" name="buildB" id="existingB" value="existing" checked/>
+                <label for="existingB" onclick="debouncedCalc()">Existing<br/><small style="color:inherit;opacity:.6">Registration duty</small></label>
               </div>
               <div class="radio-btn">
-                <input type="radio" name="buildB" id="newbuildB" value="new" onchange="debouncedCalc()"/>
-                <label for="newbuildB">New build<br/><small style="color:inherit;opacity:.6">21% VAT</small></label>
+                <input type="radio" name="buildB" id="newbuildB" value="new"/>
+                <label for="newbuildB" onclick="debouncedCalc()">New build<br/><small style="color:inherit;opacity:.6">21% VAT</small></label>
               </div>
             </div>
           </div>
@@ -1259,12 +1259,12 @@ HTML = """
             <label>Residence Use B</label>
             <div class="radio-group">
               <div class="radio-btn">
-                <input type="radio" name="residenceB" id="primaryB" value="primary" checked onchange="debouncedCalc()"/>
-                <label for="primaryB">Primary<br/><small style="color:inherit;opacity:.6">Abatements apply</small></label>
+                <input type="radio" name="residenceB" id="primaryB" value="primary" checked/>
+                <label for="primaryB" onclick="debouncedCalc()">Primary<br/><small style="color:inherit;opacity:.6">Abatements apply</small></label>
               </div>
               <div class="radio-btn">
-                <input type="radio" name="residenceB" id="secondaryB" value="secondary" onchange="debouncedCalc()"/>
-                <label for="secondaryB">Secondary / invest.<br/><small style="color:inherit;opacity:.6">No abatements</small></label>
+                <input type="radio" name="residenceB" id="secondaryB" value="secondary"/>
+                <label for="secondaryB" onclick="debouncedCalc()">Secondary / invest.<br/><small style="color:inherit;opacity:.6">No abatements</small></label>
               </div>
             </div>
           </div>
@@ -1709,6 +1709,10 @@ function calculate() {
     fetch('/calculate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(paramsB) })
       .then(r => r.json())
       .then(data => {
+        if (data.error) {
+          document.getElementById('results-compare').innerHTML = `<div class="panel"><div class="panel-body"><p style="color:var(--red);font-size:13px;padding:8px 0">${data.error}</p></div></div>`;
+          return;
+        }
         lastDataB = data;
         if (lastDataA) {
           renderResults(lastDataA, lastDataB, 'results-compare');
@@ -1725,6 +1729,10 @@ function calculate() {
   fetch('/calculate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(paramsA) })
     .then(r => r.json())
     .then(data => {
+      if (data.error) {
+        document.getElementById('results-main').innerHTML = `<div class="panel"><div class="panel-body"><p style="color:var(--red);font-size:13px;padding:8px 0">${data.error}</p></div></div>`;
+        return;
+      }
       lastDataA = data;
       saveToURL(paramsA, null);
       renderResults(lastDataA, lastDataB);
@@ -2608,7 +2616,7 @@ def calculate_route():
 
     result = compute_schedule(**params)
     if result is None:
-        return jsonify({"error": "Invalid parameters"}), 400
+        return jsonify({"error": "Available funds are insufficient to cover the purchasing costs for this property type and region. Try a higher down payment or a lower price."}), 400
     return jsonify(result)
 
 
