@@ -1710,7 +1710,11 @@ function calculate() {
       .then(r => r.json())
       .then(data => {
         lastDataB = data;
-        renderResultsB(lastDataB);
+        if (lastDataA) {
+          renderResults(lastDataA, lastDataB, 'results-compare');
+        } else {
+          renderResultsB(lastDataB);
+        }
       });
     return;
   }
@@ -1723,7 +1727,7 @@ function calculate() {
     .then(data => {
       lastDataA = data;
       saveToURL(paramsA, null);
-      renderResults(lastDataA, null);
+      renderResults(lastDataA, lastDataB);
     });
 }
 
