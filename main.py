@@ -1768,64 +1768,26 @@ function renderResults(d, dB, targetId = 'results-main') {
         <div class="stat-value orange">${trueMonthly}</div>
         <div class="stat-sub">Incl. life &amp; fire insurance</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">Loan Amount</div>
-        <div class="stat-value">${fmt(d.loan_amount)}</div>
-        <div class="stat-sub">${d.ltv_pct.toFixed(1)}% LTV</div>
-      </div>
       <div class="stat-card danger">
         <div class="stat-label">Total Interest</div>
         <div class="stat-value red">${fmt(d.total_interest)}</div>
         <div class="stat-sub">${Math.round(d.total_interest/d.loan_amount*100)}% of loan</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">Upfront Costs</div>
-        <div class="stat-value">${fmt(bc.total)}</div>
-        <div class="stat-sub">Fees + notary + deed</div>
-      </div>
       <div class="stat-card success">
         <div class="stat-label">Grand Total</div>
         <div class="stat-value green">${fmt(d.grand_total)}</div>
-        <div class="stat-sub">Everything in</div>
-      </div>
-    </div>
-
-    ${comparePanel}
-
-    <!-- CHART -->
-    <div class="panel chart-panel animate" style="animation-delay:0.1s">
-      <div class="panel-header">Balance Over Time${dB ? ' — A vs B' : ''}</div>
-      <div class="panel-body">
-        <canvas id="myChart-${targetId}"></canvas>
-      </div>
-    </div>
-
-    <!-- OVERPAYMENT -->
-    <div class="panel animate" style="animation-delay:0.12s">
-      <div class="panel-header">Overpayment Simulator</div>
-      <div class="panel-body">
-        <div class="field" style="margin-bottom:12px">
-          <label>Extra Monthly Payment — <span id="extraDisplay">€0</span></label>
-          <div class="slider-wrap">
-            <input type="range" id="extraPayment" min="0" max="1000" step="50" value="0"
-              oninput="document.getElementById('extraDisplay').textContent='€'+this.value; updateOverpayment();"/>
-            <span class="range-val" style="color:var(--green)">€<span id="extraVal">0</span></span>
-          </div>
-        </div>
-        <div id="overpay-results">
-          <div style="font-size:12px;color:var(--muted)">Move the slider to simulate extra monthly repayments.</div>
-        </div>
+        <div class="stat-sub">All cash out</div>
       </div>
     </div>
 
     <!-- COSTS BREAKDOWN -->
-    <div class="panel animate" style="animation-delay:0.15s">
-      <div class="panel-header">Belgian Costs Breakdown</div>
+    <div class="panel animate" style="animation-delay:0.05s">
+      <div class="panel-header">Full Costs Breakdown</div>
       <div class="panel-body">
         <ul class="costs-list">
           <li><span class="cost-label">Property price</span><span class="cost-val">${fmt(d.price)}</span></li>
           <li><span class="cost-label">Available funds (total cash)</span><span class="cost-val">${fmt(d.down)}</span></li>
-          <li><span class="cost-label">Loan amount</span><span class="cost-val">${fmt(d.loan_amount)}</span></li>
+          <li><span class="cost-label">Loan amount (${d.ltv_pct.toFixed(1)}% LTV)</span><span class="cost-val">${fmt(d.loan_amount)}</span></li>
 
           <span class="costs-section">Upfront Costs</span>
 
@@ -1861,6 +1823,34 @@ function renderResults(d, dB, targetId = 'results-main') {
             <span class="cost-val accent" style="font-size:15px">${fmt(d.grand_total)}</span>
           </li>
         </ul>
+      </div>
+    </div>
+
+    ${comparePanel}
+
+    <!-- CHART -->
+    <div class="panel chart-panel animate" style="animation-delay:0.1s">
+      <div class="panel-header">Balance Over Time${dB ? ' — A vs B' : ''}</div>
+      <div class="panel-body">
+        <canvas id="myChart-${targetId}"></canvas>
+      </div>
+    </div>
+
+    <!-- OVERPAYMENT -->
+    <div class="panel animate" style="animation-delay:0.15s">
+      <div class="panel-header">Overpayment Simulator</div>
+      <div class="panel-body">
+        <div class="field" style="margin-bottom:12px">
+          <label>Extra Monthly Payment — <span id="extraDisplay">€0</span></label>
+          <div class="slider-wrap">
+            <input type="range" id="extraPayment" min="0" max="1000" step="50" value="0"
+              oninput="document.getElementById('extraDisplay').textContent='€'+this.value; updateOverpayment();"/>
+            <span class="range-val" style="color:var(--green)">€<span id="extraVal">0</span></span>
+          </div>
+        </div>
+        <div id="overpay-results">
+          <div style="font-size:12px;color:var(--muted)">Move the slider to simulate extra monthly repayments.</div>
+        </div>
       </div>
     </div>
 
